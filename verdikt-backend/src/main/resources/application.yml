@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: verdikt-api
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:verdikt_db}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+server:
+  port: ${PORT:8080}
+
+verdikt:
+  jwt:
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  integrations:
+    tmdb:
+      api-key: ${TMDB_API_KEY:}
+      base-url: ${TMDB_BASE_URL:https://api.themoviedb.org/3}
+    igdb:
+      client-id: ${IGDB_CLIENT_ID:}
+      client-secret: ${IGDB_CLIENT_SECRET:}
+      base-url: ${IGDB_BASE_URL:https://api.igdb.com/v4}
+    google-books:
+      api-key: ${GOOGLE_BOOKS_API_KEY:}
+      base-url: ${GOOGLE_BOOKS_BASE_URL:https://www.googleapis.com/books/v1}

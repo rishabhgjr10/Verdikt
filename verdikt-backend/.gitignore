@@ -1,0 +1,19 @@
+# Build output
+target/
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.properties
+
+# IDE & Editor files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.class
+*.log
+
+# Environment & Secret files
+.env
+.env.local
+*.env
+!.env.example

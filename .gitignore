@@ -1,0 +1,15 @@
+# Environment Variables & Secrets (CRITICAL)
+.env
+*.env
+.env.local
+
+# Backend Build & IDE
+**/target/
+**/.idea/
+**/.vscode/
+*.iml
+
+# Frontend Build & Dependencies
+**/node_modules/
+**/.next/
+**/out/
