@@ -6,14 +6,15 @@ COPY mvnw .
 COPY .mvn .mvn
 COPY src src
 
-# Build with Maven provided by the builder image. The wrapper interprets the
-# image's MAVEN_CONFIG path as a Maven command-line argument.
+# Build executable jar
 RUN mvn clean package -DskipTests
 
 # Stage 2: Create lightweight execution image
 FROM eclipse-temurin:17-jre
 WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
+
+# Copy the generated Spring Boot JAR file specifically
+COPY --from=build /app/target/verdikt-*.jar app.jar
 
 EXPOSE 8080
 
