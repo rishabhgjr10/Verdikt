@@ -6,9 +6,9 @@ COPY mvnw .
 COPY .mvn .mvn
 COPY src src
 
-# Make Maven wrapper executable and build the JAR
-RUN chmod +x ./mvnw
-RUN ./mvnw clean package -DskipTests
+# Build with Maven provided by the builder image. The wrapper interprets the
+# image's MAVEN_CONFIG path as a Maven command-line argument.
+RUN mvn clean package -DskipTests
 
 # Stage 2: Create lightweight execution image
 FROM eclipse-temurin:17-jre
