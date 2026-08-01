@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,35 +38,61 @@ public class MediaItemService {
 
     @Transactional(readOnly = true)
     public List<MediaItemDTO> searchMedia(String query, String mediaTypeFilter, int page) {
-        List<MediaItem> localResults;
+        List<MediaItem> localResults = Collections.emptyList();
         String q = query != null ? query : "";
-        if (mediaTypeFilter != null && !mediaTypeFilter.equalsIgnoreCase("ALL")) {
-            try {
-                MediaType mediaType = MediaType.valueOf(mediaTypeFilter.toUpperCase());
-                localResults = mediaItemRepository.findByMediaTypeAndTitleContainingIgnoreCase(mediaType, q);
-            } catch (IllegalArgumentException e) {
+        try {
+            if (mediaTypeFilter != null && !mediaTypeFilter.equalsIgnoreCase("ALL")) {
+                try {
+                    MediaType mediaType = MediaType.valueOf(mediaTypeFilter.toUpperCase());
+                    localResults = mediaItemRepository.findByMediaTypeAndTitleContainingIgnoreCase(mediaType, q);
+                } catch (IllegalArgumentException e) {
+                    localResults = mediaItemRepository.findByTitleContainingIgnoreCase(q);
+                }
+            } else {
                 localResults = mediaItemRepository.findByTitleContainingIgnoreCase(q);
             }
-        } else {
-            localResults = mediaItemRepository.findByTitleContainingIgnoreCase(q);
+        } catch (Exception e) {
+            log.warn("Local DB search failed for query='{}': {}", q, e.getMessage());
+            localResults = Collections.emptyList();
         }
 
-        List<MediaItemDTO> results = localResults.stream()
-                .map(MediaItemDTO::fromEntity)
-                .collect(Collectors.toList());
+        List<MediaItemDTO> results = new ArrayList<>();
+        if (localResults != null) {
+            results = localResults.stream()
+                    .map(MediaItemDTO::fromEntity)
+                    .collect(Collectors.toList());
+        }
 
-        List<MediaItemDTO> externalResults = unifiedMediaSearchService.search(q, mediaTypeFilter, page);
+        List<MediaItemDTO> externalResults = Collections.emptyList();
+        try {
+            externalResults = unifiedMediaSearchService.search(q, mediaTypeFilter, page);
+        } catch (Exception e) {
+            log.warn("Unified external search failed for query='{}': {}", q, e.getMessage());
+        }
 
-        for (MediaItemDTO ext : externalResults) {
-            Optional<MediaItem> existing = mediaItemRepository.findByExternalIdAndMediaType(
-                    ext.getExternalId(), ext.getMediaType());
-            if (existing.isPresent()) {
-                ext.setId(existing.get().getId());
-            }
-            boolean existsInLocalList = results.stream().anyMatch(
-                    local -> local.getExternalId().equals(ext.getExternalId()) && local.getMediaType() == ext.getMediaType());
-            if (!existsInLocalList) {
-                results.add(ext);
+        if (externalResults != null) {
+            for (MediaItemDTO ext : externalResults) {
+                if (ext == null || ext.getExternalId() == null || ext.getMediaType() == null) {
+                    continue;
+                }
+                try {
+                    Optional<MediaItem> existing = mediaItemRepository.findByExternalIdAndMediaType(
+                            ext.getExternalId(), ext.getMediaType());
+                    if (existing.isPresent()) {
+                        ext.setId(existing.get().getId());
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed checking local DB for existing item [extId={}]: {}", ext.getExternalId(), e.getMessage());
+                }
+
+                boolean existsInLocalList = results.stream().anyMatch(
+                        local -> local != null
+                              && local.getExternalId() != null
+                              && local.getExternalId().equals(ext.getExternalId())
+                              && local.getMediaType() == ext.getMediaType());
+                if (!existsInLocalList) {
+                    results.add(ext);
+                }
             }
         }
 

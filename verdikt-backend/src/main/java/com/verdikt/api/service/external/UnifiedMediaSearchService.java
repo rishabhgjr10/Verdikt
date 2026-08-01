@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 @Service
 public class UnifiedMediaSearchService {
@@ -31,22 +32,27 @@ public class UnifiedMediaSearchService {
     }
 
     public List<MediaItemDTO> search(String query, String mediaTypeFilter, int page) {
-        String typeUpper = mediaTypeFilter != null ? mediaTypeFilter.trim().toUpperCase() : "ALL";
+        try {
+            String typeUpper = mediaTypeFilter != null ? mediaTypeFilter.trim().toUpperCase() : "ALL";
 
-        switch (typeUpper) {
-            case "MOVIE":
-                return tmdbService.searchMovies(query, page);
-            case "SERIES":
-                return tmdbService.searchSeries(query, page);
-            case "ANIME":
-                return tmdbService.searchAnime(query, page);
-            case "GAME":
-                return igdbService.searchGames(query, page);
-            case "BOOK":
-                return googleBooksService.searchBooks(query, page);
-            case "ALL":
-            default:
-                return searchAllInParallel(query, page);
+            switch (typeUpper) {
+                case "MOVIE":
+                    return safeCall(() -> tmdbService.searchMovies(query, page), "MOVIE");
+                case "SERIES":
+                    return safeCall(() -> tmdbService.searchSeries(query, page), "SERIES");
+                case "ANIME":
+                    return safeCall(() -> tmdbService.searchAnime(query, page), "ANIME");
+                case "GAME":
+                    return safeCall(() -> igdbService.searchGames(query, page), "GAME");
+                case "BOOK":
+                    return safeCall(() -> googleBooksService.searchBooks(query, page), "BOOK");
+                case "ALL":
+                default:
+                    return searchAllInParallel(query, page);
+            }
+        } catch (Exception e) {
+            log.error("Exception in UnifiedMediaSearchService.search: {}", e.getMessage(), e);
+            return Collections.emptyList();
         }
     }
 
@@ -55,42 +61,67 @@ public class UnifiedMediaSearchService {
             return null;
         }
 
-        switch (mediaType) {
-            case MOVIE:
-                return tmdbService.fetchMovieDetails(externalId);
-            case SERIES:
-            case ANIME:
-                return tmdbService.fetchSeriesDetails(externalId, mediaType);
-            case GAME:
-                return igdbService.fetchGameDetails(externalId);
-            case BOOK:
-                return googleBooksService.fetchBookDetails(externalId);
-            default:
-                return null;
+        try {
+            switch (mediaType) {
+                case MOVIE:
+                    return tmdbService.fetchMovieDetails(externalId);
+                case SERIES:
+                case ANIME:
+                    return tmdbService.fetchSeriesDetails(externalId, mediaType);
+                case GAME:
+                    return igdbService.fetchGameDetails(externalId);
+                case BOOK:
+                    return googleBooksService.fetchBookDetails(externalId);
+                default:
+                    return null;
+            }
+        } catch (Exception e) {
+            log.error("Exception fetching external details [id={}, type={}]: {}", externalId, mediaType, e.getMessage(), e);
+            return null;
         }
     }
 
     private List<MediaItemDTO> searchAllInParallel(String query, int page) {
+        CompletableFuture<List<MediaItemDTO>> moviesFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> tmdbService.searchMovies(query, page), "MOVIE"));
+        CompletableFuture<List<MediaItemDTO>> seriesFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> tmdbService.searchSeries(query, page), "SERIES"));
+        CompletableFuture<List<MediaItemDTO>> animeFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> tmdbService.searchAnime(query, page), "ANIME"));
+        CompletableFuture<List<MediaItemDTO>> gamesFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> igdbService.searchGames(query, page), "GAME"));
+        CompletableFuture<List<MediaItemDTO>> booksFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> googleBooksService.searchBooks(query, page), "BOOK"));
+
         try {
-            CompletableFuture<List<MediaItemDTO>> moviesFuture = CompletableFuture.supplyAsync(() -> tmdbService.searchMovies(query, page));
-            CompletableFuture<List<MediaItemDTO>> seriesFuture = CompletableFuture.supplyAsync(() -> tmdbService.searchSeries(query, page));
-            CompletableFuture<List<MediaItemDTO>> animeFuture = CompletableFuture.supplyAsync(() -> tmdbService.searchAnime(query, page));
-            CompletableFuture<List<MediaItemDTO>> gamesFuture = CompletableFuture.supplyAsync(() -> igdbService.searchGames(query, page));
-            CompletableFuture<List<MediaItemDTO>> booksFuture = CompletableFuture.supplyAsync(() -> googleBooksService.searchBooks(query, page));
-
             CompletableFuture.allOf(moviesFuture, seriesFuture, animeFuture, gamesFuture, booksFuture).join();
-
-            List<MediaItemDTO> results = new ArrayList<>();
-            results.addAll(moviesFuture.get());
-            results.addAll(seriesFuture.get());
-            results.addAll(animeFuture.get());
-            results.addAll(gamesFuture.get());
-            results.addAll(booksFuture.get());
-
-            return results;
         } catch (Exception e) {
-            log.error("Error performing parallel media search across services", e);
+            log.warn("One or more parallel search futures encountered an exception: {}", e.getMessage());
+        }
+
+        List<MediaItemDTO> results = new ArrayList<>();
+        addSafeResults(results, moviesFuture);
+        addSafeResults(results, seriesFuture);
+        addSafeResults(results, animeFuture);
+        addSafeResults(results, gamesFuture);
+        addSafeResults(results, booksFuture);
+
+        return results;
+    }
+
+    private List<MediaItemDTO> safeCall(Supplier<List<MediaItemDTO>> supplier, String serviceName) {
+        try {
+            List<MediaItemDTO> list = supplier.get();
+            return list != null ? list : Collections.emptyList();
+        } catch (Exception e) {
+            log.warn("External provider [{}] search failed: {}", serviceName, e.getMessage());
             return Collections.emptyList();
+        }
+    }
+
+    private void addSafeResults(List<MediaItemDTO> target, CompletableFuture<List<MediaItemDTO>> future) {
+        try {
+            List<MediaItemDTO> items = future.get();
+            if (items != null) {
+                target.addAll(items);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to retrieve async search results from future: {}", e.getMessage());
         }
     }
 }

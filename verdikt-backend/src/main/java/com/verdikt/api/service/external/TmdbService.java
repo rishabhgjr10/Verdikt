@@ -266,14 +266,16 @@ public class TmdbService {
         String title = node.path("title").asText("");
         String releaseDate = node.path("release_date").asText("");
         Integer releaseYear = parseYear(releaseDate);
-        String posterPath = node.path("poster_path").asText(null);
-        String backdropPath = node.path("backdrop_path").asText(null);
-        String overview = node.path("overview").asText(null);
+        String posterPath = extractPath(node, "poster_path");
+        String backdropPath = extractPath(node, "backdrop_path");
+        String overview = node.hasNonNull("overview") ? node.path("overview").asText(null) : null;
 
         List<String> genres = new ArrayList<>();
-        if (node.has("genres")) {
+        if (node.has("genres") && node.get("genres").isArray()) {
             for (JsonNode g : node.get("genres")) {
-                genres.add(g.path("name").asText());
+                if (g.has("name")) {
+                    genres.add(g.path("name").asText());
+                }
             }
         }
 
@@ -294,21 +296,23 @@ public class TmdbService {
         String title = node.path("name").asText("");
         String firstAirDate = node.path("first_air_date").asText("");
         Integer releaseYear = parseYear(firstAirDate);
-        String posterPath = node.path("poster_path").asText(null);
-        String backdropPath = node.path("backdrop_path").asText(null);
-        String overview = node.path("overview").asText(null);
+        String posterPath = extractPath(node, "poster_path");
+        String backdropPath = extractPath(node, "backdrop_path");
+        String overview = node.hasNonNull("overview") ? node.path("overview").asText(null) : null;
 
         List<String> genres = new ArrayList<>();
-        if (node.has("genres")) {
+        if (node.has("genres") && node.get("genres").isArray()) {
             for (JsonNode g : node.get("genres")) {
-                genres.add(g.path("name").asText());
+                if (g.has("name")) {
+                    genres.add(g.path("name").asText());
+                }
             }
         }
 
         MediaType finalType = defaultType;
         if (defaultType == MediaType.SERIES && (genres.contains("Animation") || genres.contains("Anime"))) {
             String originCountry = node.path("origin_country").toString();
-            if (originCountry.contains("JP")) {
+            if (originCountry != null && originCountry.contains("JP")) {
                 finalType = MediaType.ANIME;
             }
         }
@@ -377,6 +381,16 @@ public class TmdbService {
         }
         log.warn("TMDB {} failed [{}] — {} : {}",
                 method, context, root.getClass().getSimpleName(), root.getMessage());
+    }
+
+    private String extractPath(JsonNode node, String fieldName) {
+        if (node != null && node.hasNonNull(fieldName)) {
+            String val = node.path(fieldName).asText();
+            if (val != null && !val.isBlank() && !"null".equalsIgnoreCase(val)) {
+                return val;
+            }
+        }
+        return null;
     }
 
     private Integer parseYear(String dateStr) {
