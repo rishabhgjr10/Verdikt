@@ -7,7 +7,10 @@ import {
   ReviewWithRelations,
 } from "@/types/media";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://verdikt-backend-production-34a2.up.railway.app/api";
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
