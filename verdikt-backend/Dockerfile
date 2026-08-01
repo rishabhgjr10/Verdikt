@@ -2,16 +2,14 @@
 FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
 
-# Copy pom.xml first to leverage Docker layer caching
-COPY pom.xml .
-
-# Copy source code and wrapper files
-COPY src ./src
-COPY mvnw .
-COPY .mvn ./.mvn
+# Copy files using the subfolder context
+COPY verdikt-backend/pom.xml .
+COPY verdikt-backend/mvnw .
+COPY verdikt-backend/.mvn ./.mvn
+COPY verdikt-backend/src ./src
 
 # Build executable jar
-RUN ./mvnw clean package -DskipTests
+RUN chmod +x ./mvnw && ./mvnw clean package -DskipTests
 
 # Stage 2: Create lightweight execution image
 FROM eclipse-temurin:17-jre
