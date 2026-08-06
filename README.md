@@ -51,12 +51,8 @@
                          │              │
    ┌─────────────────────┴──┐        ┌─┴───────────────────────┐
    │ External Data Services │        │   MySQL Database        │
-   │ (TMDB / Books / IGDB)  │       │ (Persisted Aggregations)│
+   │ (TMDB / Books / IGDB)  │        │(Persisted Aggregations) │
    └────────────────────────┘        └─────────────────────────┘
-
----
-
-## 📦 Getting Started
 
 ### **Prerequisites**
 - Java 17 JDK
@@ -64,15 +60,3 @@
 - Docker Desktop
 - MySQL Server (if running locally without Docker)
 
-### **1. Clone the Repository**
-```bash
-git clone [https://github.com/rishabhgjr10/verdikt](https://github.com/rishabhgjr10/verdikt).
-cd verdikt
-
-🔗 Live Application & Links
-Live Platform: https://verdikt-two.vercel.app/
-
-Developer Profile: github.com/rishabhgjr10
-
-📝 License
-Distributed under the MIT License. See LICENSE for more information.
