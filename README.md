@@ -39,21 +39,6 @@
 
 ---
 
-## 📐 System Architecture
-                   ┌─────────────────────────┐
-                   │ Next.js Client (Vercel) │ 
-                   └───────────┬─────────────┘
-                               │ REST APIs
-                               ▼
-                   ┌─────────────────────────┐
-                   │Spring Boot API (Render)│
-                   └─────┬──────────────┬────┘
-                         │              │
-   ┌─────────────────────┴──┐        ┌─┴───────────────────────┐
-   │ External Data Services │        │   MySQL Database        │
-   │ (TMDB / Books / IGDB)  │        │(Persisted Aggregations) │
-   └────────────────────────┘        └─────────────────────────┘
-
 ### **Prerequisites**
 - Java 17 JDK
 - Node.js 18+ and npm
