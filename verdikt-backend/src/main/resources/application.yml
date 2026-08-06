@@ -4,7 +4,7 @@ spring:
 
   datasource:
     # Priority: SPRING_DATASOURCE_URL (must use jdbc:mysql:// prefix) -> individual DB_* vars
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:verdikt_db}?useSSL=${DB_SSL:false}&requireSSL=${DB_SSL:false}&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:verdikt_db}?sslMode=${DB_SSL_MODE:DISABLED}&allowPublicKeyRetrieval=true&serverTimezone=UTC}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver

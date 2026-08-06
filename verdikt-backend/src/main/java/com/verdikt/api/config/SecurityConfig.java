@@ -50,8 +50,8 @@ public class SecurityConfig {
                         // Public GET endpoints for reviews
                         .requestMatchers(HttpMethod.GET, "/reviews/**", "/api/reviews/**", "/api/v1/reviews/**").permitAll()
 
-                        // System / Error endpoints
-                        .requestMatchers("/error", "/favicon.ico", "/", "/actuator/**").permitAll()
+                        // System / Error / Health endpoints
+                        .requestMatchers("/error", "/favicon.ico", "/", "/actuator/**", "/api/health").permitAll()
 
                         // Any other endpoint requires JWT authentication
                         .anyRequest().authenticated()
