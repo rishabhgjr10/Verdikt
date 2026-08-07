@@ -7,6 +7,7 @@ import { MediaCard } from "@/components/MediaCard";
 import { MediaItem, MediaType } from "@/types/media";
 import { mediaApi } from "@/lib/api";
 import { Search, Sparkles, Film, TrendingUp, ShieldCheck, Flame, Loader2, ChevronDown } from "lucide-react";
+import { StatusUpdates } from "@/components/StatusUpdates";
 
 export default function HomePage() {
   const router = useRouter();
@@ -117,6 +118,9 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
       <Navbar />
+
+      {/* System Status / Announcement Banner */}
+      <StatusUpdates variant="announcement" />
 
       {/* Hero Section */}
       <section className="relative pt-16 pb-20 md:pt-24 md:pb-32 overflow-hidden border-b border-slate-900">
