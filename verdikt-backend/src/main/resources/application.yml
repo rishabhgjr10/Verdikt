@@ -9,11 +9,16 @@ spring:
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-      idle-timeout: 30000
-      connection-timeout: 20000
+      maximum-pool-size: 5
+      minimum-idle: 1
+      idle-timeout: 300000
+      connection-timeout: 30000
       max-lifetime: 1800000
+      # -1 means Hikari will keep retrying to get a connection on startup
+      # instead of failing immediately if the DB is slow to wake up
+      initialization-fail-timeout: -1
+      connection-test-query: SELECT 1
+      keepalive-time: 60000
 
   jpa:
     hibernate:
@@ -24,6 +29,9 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: false
+        # Retry DDL connection attempts before giving up
+        hbm2ddl:
+          jdbc_metadata_extraction_strategy: individually
 
 server:
   port: ${PORT:8080}
