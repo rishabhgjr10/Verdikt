@@ -107,10 +107,10 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
                   key={v}
                   type="button"
                   onClick={() => setSelectedVerdict(v)}
-                  className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${
+                  className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 ${
                     selectedVerdict === v
-                      ? "border-violet-500 bg-violet-950/40 ring-2 ring-violet-500/30"
-                      : "border-slate-800 bg-slate-800/40 hover:border-slate-700 hover:bg-slate-800/80"
+                      ? "bg-purple-600/20 border-purple-500 text-purple-300 ring-2 ring-purple-500/50 shadow-lg shadow-purple-500/20 scale-[1.02]"
+                      : "border-slate-800 bg-slate-800/40 hover:border-slate-700 hover:bg-slate-800/80 hover:scale-[1.01]"
                   }`}
                 >
                   <VerdictBadge verdict={v} size="sm" />
@@ -129,7 +129,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="What made this great? Is it worth watching/playing? Tell the community your honest thoughts..."
-              className="w-full p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none"
+              className="w-full p-3.5 bg-slate-950/80 border border-slate-700/60 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40 transition-all resize-none backdrop-blur-sm"
             />
           </div>
 

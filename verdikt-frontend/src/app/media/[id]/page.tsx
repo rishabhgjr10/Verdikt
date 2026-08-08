@@ -8,6 +8,7 @@ import { ReviewModal } from "@/components/ReviewModal";
 import { MediaItem, ReviewWithRelations } from "@/types/media";
 import { mediaApi, reviewApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { getPlatformSearchUrl, getPlatformColor, youtubeTrailerUrl } from "@/lib/streamingUtils";
 import {
   Play,
   PlusCircle,
@@ -21,8 +22,14 @@ import {
   EyeOff,
   User as UserIcon,
   Clock,
-  Share2,
+  ExternalLink,
 } from "lucide-react";
+
+/** Converts http:// → https:// (Google Books / insecure CDN links) */
+function sanitizeImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return url.startsWith("http://") ? url.replace("http://", "https://") : url;
+}
 
 export default function MediaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -36,6 +43,8 @@ export default function MediaDetailPage({ params }: { params: Promise<{ id: stri
   const [trailerModalOpen, setTrailerModalOpen] = useState(false);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
+  const [posterError, setPosterError] = useState(false);
+  const [backdropError, setBackdropError] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -111,12 +120,13 @@ export default function MediaDetailPage({ params }: { params: Promise<{ id: stri
 
       {/* Hero Backdrop Section */}
       <div className="relative w-full overflow-hidden bg-slate-950 border-b border-slate-900">
-        {mediaItem.backdropImage && (
+        {sanitizeImageUrl(mediaItem.backdropImage) && !backdropError && (
           <div className="absolute inset-0 z-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={mediaItem.backdropImage}
+              src={sanitizeImageUrl(mediaItem.backdropImage)!}
               alt={mediaItem.title}
+              onError={() => setBackdropError(true)}
               className="w-full h-full object-cover opacity-20 filter blur-sm scale-105"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent" />
@@ -127,13 +137,18 @@ export default function MediaDetailPage({ params }: { params: Promise<{ id: stri
           <div className="flex flex-col md:flex-row gap-8 items-start">
             {/* Cover Poster */}
             <div className="w-48 sm:w-56 md:w-64 shrink-0 mx-auto md:mx-0 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-900 aspect-[2/3] relative">
-              {mediaItem.coverImage ? (
+              {sanitizeImageUrl(mediaItem.coverImage) && !posterError ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={mediaItem.coverImage} alt={mediaItem.title} className="w-full h-full object-cover" />
+                <img
+                  src={sanitizeImageUrl(mediaItem.coverImage)!}
+                  alt={mediaItem.title}
+                  onError={() => setPosterError(true)}
+                  className="w-full h-full object-cover"
+                />
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center p-4 text-slate-600">
-                  <TypeIcon className="w-12 h-12 mb-2" />
-                  <span className="text-xs font-medium">No Cover</span>
+                <div className="w-full h-full flex flex-col items-center justify-center p-4 text-slate-600 bg-gradient-to-br from-slate-800 to-slate-900">
+                  <TypeIcon className="w-12 h-12 mb-2 opacity-40" />
+                  <span className="text-xs font-medium opacity-60">No Cover</span>
                 </div>
               )}
             </div>
@@ -188,34 +203,57 @@ export default function MediaDetailPage({ params }: { params: Promise<{ id: stri
               )}
 
               {/* Platforms / Where to Watch */}
-              {mediaItem.platformsJson && mediaItem.platformsJson.length > 0 && (
-                <div className="pt-2">
-                  <span className="text-xs font-semibold text-slate-400 block mb-1.5 uppercase tracking-wider">
-                    Available On / Platforms
-                  </span>
-                  <div className="flex flex-wrap gap-1.5 justify-center md:justify-start">
-                    {mediaItem.platformsJson.map((plat, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800/80 text-emerald-300 border border-emerald-500/30"
-                      >
-                        {plat}
-                      </span>
-                    ))}
+              <div className="pt-2">
+                <span className="text-xs font-semibold text-slate-400 block mb-2 uppercase tracking-wider">
+                  Available On / Platforms
+                </span>
+                {mediaItem.platformsJson && mediaItem.platformsJson.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+                    {mediaItem.platformsJson.map((plat, idx) => {
+                      const { bg, text } = getPlatformColor(plat);
+                      const url = getPlatformSearchUrl(plat, mediaItem.title);
+                      return (
+                        <a
+                          key={idx}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-700/60 bg-slate-900/80 text-slate-200 hover:border-purple-500/50 hover:scale-[1.02] hover:bg-slate-800 transition-all shadow-sm group"
+                        >
+                          {/* Brand-colour initial dot */}
+                          <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold shrink-0 ${bg} ${text}`}>
+                            {plat.charAt(0).toUpperCase()}
+                          </span>
+                          {plat}
+                          <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-purple-400 transition-colors shrink-0" />
+                        </a>
+                      );
+                    })}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-xs text-slate-500 italic">
+                    Not currently available for direct streaming or digital rent / purchase
+                  </p>
+                )}
+              </div>
 
               {/* Action Buttons */}
               <div className="pt-4 flex flex-wrap items-center justify-center md:justify-start gap-3">
-                {mediaItem.mediaType !== "BOOK" && mediaItem.trailerUrl && (
-                  <button
-                    onClick={() => setTrailerModalOpen(true)}
-                    className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-sm text-white bg-slate-900 border border-slate-700 hover:bg-slate-800 transition-all shadow-lg"
+                {/* Watch Trailer — always shown for Movies, Series, Anime;
+                    uses trailerUrl if present, otherwise YouTube search fallback */}
+                {mediaItem.mediaType !== "BOOK" && mediaItem.mediaType !== "GAME" && (
+                  <a
+                    href={mediaItem.trailerUrl || youtubeTrailerUrl(mediaItem.title)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-sm text-white bg-slate-900 border border-slate-700 hover:bg-slate-800 hover:border-violet-500/50 transition-all shadow-lg"
                   >
                     <Play className="w-4 h-4 text-violet-400 fill-violet-400" />
                     Watch Trailer
-                  </button>
+                    {!mediaItem.trailerUrl && (
+                      <span className="text-[10px] text-slate-500 font-normal">(YouTube)</span>
+                    )}
+                  </a>
                 )}
 
                 <button
