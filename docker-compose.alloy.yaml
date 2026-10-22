@@ -1,0 +1,51 @@
+services:
+  db:
+    image: mysql:8.0
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: verdikt_db
+    volumes:
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      retries: 30
+
+  api:
+    image: maven:3.9.6-eclipse-temurin-17
+    working_dir: /workspace/verdikt-backend
+    network_mode: host
+    volumes:
+      - .:/workspace
+      - m2:/root/.m2
+    environment:
+      PORT: "8081"
+      DB_HOST: 127.0.0.1
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:-}
+      IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:-}
+      GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
+      IS_ALLOY: ${IS_ALLOY:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: mvn -q spring-boot:run
+
+  site:
+    image: node:22-bookworm
+    working_dir: /workspace/verdikt-frontend
+    network_mode: host
+    volumes:
+      - .:/workspace
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8081/api
+      IS_ALLOY: ${IS_ALLOY:-false}
+    depends_on:
+      - api
+    command: bash -lc "npm install && npx next dev -H 0.0.0.0 -p 3000"
+
+volumes:
+  m2:
