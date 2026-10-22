@@ -1,292 +1,508 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Navbar } from "@/components/Navbar";
-import { MediaCard } from "@/components/MediaCard";
-import { MediaItem, MediaType } from "@/types/media";
+import React, { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
+import { Navbar, NavMediaCategory } from "@/components/Navbar";
+import { StreamingHub } from "@/components/StreamingHub";
+import { Leaderboard } from "@/components/Leaderboard";
+import { MediaItem, MediaType, Verdict } from "@/types/media";
 import { mediaApi } from "@/lib/api";
-import { Search, Sparkles, Film, TrendingUp, ShieldCheck, Flame, Loader2, ChevronDown } from "lucide-react";
-import { StatusUpdates } from "@/components/StatusUpdates";
+import {
+  sanitizeImageUrl,
+  sanitizeBackdropUrl,
+  voteToVerdict,
+  fetchTrendingMovies,
+  fetchTrendingTv,
+  fetchTrendingAll,
+  fetchTrendingAnime,
+  tmdbToMediaItem,
+  deduplicateFranchises,
+  deduplicateMedia,
+} from "@/lib/tmdb";
+import { Film, Tv, Sparkles, Gamepad2, BookOpen } from "lucide-react";
 
-export default function HomePage() {
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [selectedType, setSelectedType] = useState<MediaType | "ALL">("ALL");
-  const [featuredItems, setFeaturedItems] = useState<MediaItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+// ── Verdict Configuration & Color Tokens ─────────────────────────────────────
+const VERDICT_CONFIG: Record<
+  Verdict,
+  { label: string; color: string; textClass: string; score: number }
+> = {
+  PERFECTION: {
+    label: "Perfection",
+    color: "#a855f7",
+    textClass: "text-[#a855f7]",
+    score: 4,
+  },
+  GO_FOR_IT: {
+    label: "Go For It",
+    color: "#10b981",
+    textClass: "text-[#10b981]",
+    score: 3,
+  },
+  TIMEPASS: {
+    label: "Timepass",
+    color: "#f59e0b",
+    textClass: "text-[#f59e0b]",
+    score: 2,
+  },
+  SKIP_IT: {
+    label: "Skip",
+    color: "#ef4444",
+    textClass: "text-[#ef4444]",
+    score: 1,
+  },
+};
 
-  const getItemKey = (item: MediaItem, index: number) =>
-    item.id || (item.externalId ? `${item.mediaType}-${item.externalId}` : `item-${index}`);
+const TYPE_ICON: Record<string, React.ElementType> = {
+  MOVIE: Film,
+  SERIES: Tv,
+  ANIME: Sparkles,
+  GAME: Gamepad2,
+  BOOK: BookOpen,
+};
 
-  const fetchItemsForPage = async (pageToFetch: number): Promise<MediaItem[]> => {
-    if (selectedType === "ALL") {
-      const [movies, series, books] = await Promise.all([
-        mediaApi.search("Dune", "MOVIE", pageToFetch).catch(() => [] as MediaItem[]),
-        mediaApi.search("Breaking Bad", "SERIES", pageToFetch).catch(() => [] as MediaItem[]),
-        mediaApi.search("Harry Potter", "BOOK", pageToFetch).catch(() => [] as MediaItem[]),
-      ]);
-      const merged: MediaItem[] = [];
-      const maxPer = 8;
-      merged.push(...movies.slice(0, maxPer));
-      merged.push(...series.slice(0, maxPer));
-      merged.push(...books.slice(0, maxPer));
-      return merged;
-    } else {
-      const seedQueries: Record<string, string> = {
-        MOVIE: "Avengers",
-        SERIES: "Breaking Bad",
-        ANIME: "Naruto",
-        GAME: "Zelda",
-        BOOK: "Harry Potter",
-      };
-      const seedQuery = seedQueries[selectedType] || "popular";
-      return await mediaApi.search(seedQuery, selectedType, pageToFetch);
-    }
-  };
+// Fallback deterministic verdict if voteAverage is unavailable
+function titleToVerdict(title: string): Verdict {
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) {
+    hash = ((hash << 5) - hash + title.charCodeAt(i)) | 0;
+  }
+  const tier = Math.abs(hash) % 4;
+  return (["SKIP_IT", "TIMEPASS", "GO_FOR_IT", "PERFECTION"] as Verdict[])[tier];
+}
 
-  useEffect(() => {
-    async function loadFeatured() {
-      setIsLoading(true);
-      setPage(1);
-      setHasMore(true);
-      try {
-        const results = await fetchItemsForPage(1);
-        setFeaturedItems(results);
-        if (results.length === 0) {
-          setHasMore(false);
-        }
-      } catch (e) {
-        console.error("Failed to load featured media", e);
-        setFeaturedItems([]);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadFeatured();
-  }, [selectedType]);
+function getItemHref(item: MediaItem): string {
+  // If backend database UUID
+  const isUuid =
+    item.id &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
+  if (isUuid) {
+    return `/media/${item.id}`;
+  }
+  const extId =
+    item.externalId ||
+    (item.id.startsWith("tmdb-") ? item.id.replace("tmdb-", "") : item.id);
+  const type = item.mediaType || "MOVIE";
+  return `/media/external/${type}/${encodeURIComponent(extId)}`;
+}
 
-  const handleLoadMore = async () => {
-    if (isFetchingMore || !hasMore) return;
-    setIsFetchingMore(true);
-    const nextPage = page + 1;
+// ── Poster Card with Overlaid Frosted Verdict Chip & Styled Fallback ──────────
+interface FeedItem extends MediaItem {
+  voteAverage?: number;
+  popularity?: number;
+}
 
-    try {
-      const newItems = await fetchItemsForPage(nextPage);
-      if (newItems.length === 0) {
-        setHasMore(false);
-      } else {
-        setFeaturedItems((prevItems) => {
-          const existingKeys = new Set(
-            prevItems.map((item, idx) => getItemKey(item, idx))
-          );
-          const filteredNew = newItems.filter(
-            (item, idx) => !existingKeys.has(getItemKey(item, idx))
-          );
-          if (filteredNew.length === 0) {
-            setHasMore(false);
-          }
-          return [...prevItems, ...filteredNew];
-        });
-        setPage(nextPage);
-      }
-    } catch (e) {
-      console.error("Failed to load more home items", e);
-    } finally {
-      setIsFetchingMore(false);
-    }
-  };
-
-  const handleHeroSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim()) return;
-    router.push(`/search?q=${encodeURIComponent(query.trim())}&type=${selectedType}`);
-  };
-
-  const categoryLabels: Record<string, string> = {
-    ALL: "All Media",
-    MOVIE: "Movies",
-    SERIES: "Series",
-    ANIME: "Anime",
-    GAME: "Games",
-    BOOK: "Books",
-  };
+function PosterCard({ item }: { item: FeedItem }) {
+  const [imgErr, setImgErr] = useState(false);
+  const img = sanitizeImageUrl(item.coverImage);
+  const verdict =
+    item.voteAverage !== undefined
+      ? voteToVerdict(item.voteAverage)
+      : titleToVerdict(item.title);
+  const cfg = VERDICT_CONFIG[verdict];
+  const Icon = TYPE_ICON[item.mediaType] ?? Film;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
-      <Navbar />
-
-      {/* System Status / Announcement Banner */}
-      <StatusUpdates variant="announcement" />
-
-      {/* Hero Section */}
-      <section className="relative pt-16 pb-20 md:pt-24 md:pb-32 overflow-hidden border-b border-slate-900">
-        {/* Ambient Glow */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-gradient-to-tr from-violet-600/20 to-indigo-500/20 blur-[120px] rounded-full pointer-events-none" />
-
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center relative z-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-violet-950/80 border border-violet-500/30 text-violet-300 text-xs font-semibold shadow-lg shadow-violet-900/20 mb-6 backdrop-blur-md">
-            <Flame className="w-4 h-4 text-amber-400" />
-            <span>The Unified Social Verdict Platform</span>
-          </div>
-
-          <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-100 leading-[1.15]">
-            One Place for Your Verdicts on{" "}
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 via-pink-400 to-amber-300">
-              Movies, Games, Anime & Books.
-            </span>
-          </h1>
-
-          <p className="mt-6 text-base sm:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            Stop switching between IMDb, IGDB, and Goodreads. Search millions of titles, give instant 4-tier verdicts, and share reviews with spoiler protection.
-          </p>
-
-          {/* Hero Search Bar */}
-          <form onSubmit={handleHeroSearch} className="mt-10 max-w-2xl mx-auto">
-            <div className="flex flex-col sm:flex-row p-2 bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl backdrop-blur-xl gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search any movie, anime, game, or book..."
-                  className="w-full pl-11 pr-4 py-3.5 bg-transparent text-slate-100 placeholder-slate-500 text-sm focus:outline-none"
-                />
-                <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedType}
-                  onChange={(e) => setSelectedType(e.target.value as MediaType | "ALL")}
-                  className="px-3.5 py-3.5 bg-slate-800/80 border border-slate-700/60 rounded-xl text-slate-200 text-xs font-semibold focus:outline-none"
-                >
-                  {Object.entries(categoryLabels).map(([value, label]) => (
-                    <option key={value} value={value} className="bg-slate-900 text-slate-200">
-                      {label}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="submit"
-                  className="px-6 py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-600/30 transition-all shrink-0"
-                >
-                  Search
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      {/* Featured / Trending Section */}
-      <section className="py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex-1">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-violet-600/20 text-violet-400 border border-violet-500/30">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-100">
-                {selectedType === "ALL" ? "Trending Across All Media" : `Trending ${categoryLabels[selectedType] || "Media"}`}
-              </h2>
-              <p className="text-xs text-slate-400">
-                {selectedType === "ALL"
-                  ? "Discover popular titles across movies, series, and books"
-                  : `Showing popular ${categoryLabels[selectedType]?.toLowerCase() || "items"}`}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="aspect-[2/3] rounded-xl bg-slate-900 animate-pulse border border-slate-800" />
-            ))}
-          </div>
-        ) : featuredItems.length > 0 ? (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
-              {featuredItems.map((item, index) => (
-                <MediaCard key={getItemKey(item, index)} item={item} />
-              ))}
-            </div>
-
-            {/* Load More Button */}
-            {hasMore && (
-              <div className="mt-12 text-center">
-                <button
-                  onClick={handleLoadMore}
-                  disabled={isFetchingMore}
-                  className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-200 text-sm font-bold shadow-lg transition-all disabled:opacity-50"
-                >
-                  {isFetchingMore ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
-                      <span>Loading More...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Load More Results</span>
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </>
+    <Link href={getItemHref(item)} className="group block">
+      {/* Poster Container */}
+      <div className="aspect-[2/3] w-full rounded-xl overflow-hidden border border-white/10 bg-zinc-900 relative shadow-sm">
+        {img && !imgErr ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={img}
+            alt={item.title}
+            onError={() => setImgErr(true)}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+          />
         ) : (
-          <div className="text-center py-12 bg-slate-900/50 rounded-2xl border border-slate-800">
-            <Sparkles className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-400 font-medium">Use the search bar above to explore any movie, anime, game, or book.</p>
+          /* Styled Fallback Card with Title Typography */
+          <div className="w-full h-full flex flex-col justify-between p-3.5 bg-gradient-to-br from-zinc-800 via-zinc-900 to-[#121215] text-zinc-300 relative border border-white/[0.04]">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase bg-white/[0.06] px-1.5 py-0.5 rounded border border-white/[0.08]">
+                {item.mediaType}
+              </span>
+            </div>
+
+            <div className="my-auto py-2 text-center">
+              <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center mx-auto mb-2 text-zinc-400">
+                <Icon className="w-4 h-4 opacity-70" />
+              </div>
+              <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-3 leading-snug tracking-tight px-1">
+                {item.title}
+              </h3>
+            </div>
+
+            <div className="text-center pt-1 border-t border-white/[0.04]">
+              <span className="text-[10px] text-zinc-500">
+                {item.releaseYear || "Verdikt"}
+              </span>
+            </div>
           </div>
         )}
-      </section>
 
-      {/* Feature Callouts */}
-      <section className="py-16 bg-slate-900/50 border-t border-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid md:grid-cols-3 gap-8">
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-            <div className="w-10 h-10 rounded-xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center mb-4">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-bold text-slate-100">4-Tier Verdict System</h3>
-            <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-              Rate content effortlessly with Perfection, Go For It, Timepass, or Skip It without complicated 10-point scale confusion.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center mb-4">
-              <Film className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-bold text-slate-100">Unified Search API</h3>
-            <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-              Seamlessly query TMDB, IGDB, and Google Books simultaneously with on-demand local database caching.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-            <div className="w-10 h-10 rounded-xl bg-amber-600/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mb-4">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-bold text-slate-100">Spoiler Protection</h3>
-            <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-              Read community verdicts safely. Spoilers are automatically blurred until you explicitly choose to reveal them.
-            </p>
+        {/* Overlaid Frosted Glass Verdict Chip */}
+        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
+          <span className={`text-[10px] font-semibold leading-none ${cfg.textClass}`}>
+            {cfg.label}
+          </span>
+          <div className="flex items-center gap-[2.5px]">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <span
+                key={i}
+                className="inline-block h-1.5 w-[5px] rounded-[1px]"
+                style={{
+                  backgroundColor:
+                    i < cfg.score ? cfg.color : "rgba(255, 255, 255, 0.2)",
+                }}
+              />
+            ))}
           </div>
         </div>
-      </section>
 
-      {/* Footer */}
-      <footer className="py-8 border-t border-slate-900 text-center text-xs text-slate-500">
-        <p>© 2026 Verdikt. Built with Spring Boot 3.4 & Next.js App Router.</p>
-      </footer>
+        {/* Hover overlay sheen */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 pointer-events-none" />
+      </div>
+
+      {/* Bottom Metadata */}
+      <div className="mt-2 space-y-0.5">
+        <p className="text-sm font-medium text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
+          {item.title}
+        </p>
+        <p className="text-xs text-zinc-500 leading-none">
+          {item.releaseYear || "TBA"}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+// ── Landscape Card ("Watch Now") ──────────────────────────────────────────────
+function LandscapeCard({ item }: { item: FeedItem }) {
+  const [imgErr, setImgErr] = useState(false);
+  const backdrop =
+    sanitizeBackdropUrl(item.backdropImage) || sanitizeImageUrl(item.coverImage);
+
+  return (
+    <Link href={getItemHref(item)} className="group block cursor-pointer">
+      <div className="aspect-video w-full rounded-xl overflow-hidden border border-white/10 relative bg-zinc-900 shadow-sm">
+        {backdrop && !imgErr ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={backdrop}
+            alt={item.title}
+            onError={() => setImgErr(true)}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center p-4">
+            <span className="text-xs text-zinc-500 font-medium">{item.title}</span>
+          </div>
+        )}
+
+        {/* Bottom gradient fade */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+
+        {/* Overlaid Title */}
+        <div className="absolute bottom-0 left-0 right-0 p-3.5">
+          <p className="text-sm font-bold text-white leading-snug line-clamp-1 drop-shadow-sm group-hover:text-violet-300 transition-colors">
+            {item.title}
+          </p>
+        </div>
+      </div>
+      <div className="mt-2">
+        <p className="text-xs text-zinc-500 leading-none">
+          {item.mediaType === "SERIES" ? "Series" : "Movie"} &middot;{" "}
+          {item.releaseYear || "TBA"}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+// ── Loading Skeletons ────────────────────────────────────────────────────────
+function PosterSkeleton() {
+  return (
+    <div className="space-y-2">
+      <div className="aspect-[2/3] w-full rounded-xl bg-zinc-900 animate-pulse border border-white/[0.04]" />
+      <div className="h-3.5 w-3/4 rounded bg-zinc-800 animate-pulse" />
+      <div className="h-3 w-1/3 rounded bg-zinc-800/60 animate-pulse" />
+    </div>
+  );
+}
+
+function LandscapeSkeleton() {
+  return (
+    <div className="space-y-2">
+      <div className="aspect-video w-full rounded-xl bg-zinc-900 animate-pulse border border-white/[0.04]" />
+      <div className="h-3.5 w-1/2 rounded bg-zinc-800 animate-pulse" />
+    </div>
+  );
+}
+
+function LeaderboardSkeleton() {
+  return (
+    <div className="rounded-2xl bg-zinc-900/40 border border-white/[0.08] p-5 space-y-4">
+      <div className="h-4 w-1/2 rounded bg-zinc-800 animate-pulse" />
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <div className="h-6 w-6 rounded bg-zinc-800 animate-pulse" />
+          <div className="aspect-[2/3] w-10 rounded-md bg-zinc-800 animate-pulse" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3.5 w-3/4 rounded bg-zinc-800 animate-pulse" />
+            <div className="h-2.5 w-1/2 rounded bg-zinc-800/50 animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN HOMEPAGE
+// ══════════════════════════════════════════════════════════════════════════════
+export default function HomePage() {
+  const [category, setCategory] = useState<NavMediaCategory>("ALL");
+
+  // Data states
+  const [posterItems, setPosterItems] = useState<FeedItem[]>([]);
+  const [landscapeItems, setLandscapeItems] = useState<FeedItem[]>([]);
+  const [leaderboardItems, setLeaderboardItems] = useState<FeedItem[]>([]);
+
+  // Loading states
+  const [postersLoading, setPostersLoading] = useState(true);
+  const [landscapeLoading, setLandscapeLoading] = useState(true);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+
+  // ── Smart Feed Deduplication & Franchise Grouping ──────────────────────────
+  const fetchPosters = useCallback(async (cat: NavMediaCategory) => {
+    setPostersLoading(true);
+    try {
+      let items: FeedItem[] = [];
+
+      if (cat === "ALL") {
+        // Query TMDB /trending/all/day
+        const trendingAll = await fetchTrendingAll();
+        items = trendingAll.map((item) => tmdbToMediaItem(item));
+
+        // Supplement to ensure a full discovery shelf
+        if (items.length < 15) {
+          const [movies, tvShows] = await Promise.all([
+            fetchTrendingMovies(),
+            fetchTrendingTv(),
+          ]);
+          items = [
+            ...items,
+            ...movies.map((m) => tmdbToMediaItem(m, "MOVIE")),
+            ...tvShows.map((t) => tmdbToMediaItem(t, "SERIES")),
+          ];
+        }
+      } else if (cat === "MOVIE") {
+        const movies = await fetchTrendingMovies();
+        items = movies.map((m) => tmdbToMediaItem(m, "MOVIE"));
+      } else if (cat === "SERIES") {
+        const tvShows = await fetchTrendingTv();
+        items = tvShows.map((t) => tmdbToMediaItem(t, "SERIES"));
+      } else if (cat === "ANIME") {
+        const anime = await fetchTrendingAnime();
+        items = anime.map((a) => tmdbToMediaItem(a, "SERIES"));
+        if (items.length < 5) {
+          const backendAnime = await mediaApi
+            .search("anime", "ANIME", 1)
+            .catch(() => [] as MediaItem[]);
+          items = [...items, ...backendAnime];
+        }
+      } else if (cat === "GAME") {
+        const backendGames = await mediaApi
+          .search("popular", "GAME", 1)
+          .catch(() => [] as MediaItem[]);
+        items = backendGames;
+      } else if (cat === "BOOK") {
+        const backendBooks = await mediaApi
+          .search("popular", "BOOK", 1)
+          .catch(() => [] as MediaItem[]);
+        items = backendBooks;
+      }
+
+      // ── Smart Franchise Grouping ──────────────────────────────────────────
+      // Group incoming titles by their base franchise/collection name,
+      // displaying ONLY the single highest-rated / most popular entry per franchise.
+      const franchiseDeduplicated = deduplicateFranchises(items);
+      setPosterItems(franchiseDeduplicated.slice(0, 15));
+    } catch (err) {
+      console.error("Failed to fetch poster shelf", err);
+      setPosterItems([]);
+    } finally {
+      setPostersLoading(false);
+    }
+  }, []);
+
+  // ── Fetch Landscape Shelf ("Watch Now") with 16:9 Backdrops ─────────────────
+  const fetchLandscape = useCallback(async () => {
+    setLandscapeLoading(true);
+    try {
+      const [movies, tvShows] = await Promise.all([
+        fetchTrendingMovies(),
+        fetchTrendingTv(),
+      ]);
+
+      const all = [
+        ...movies.map((m) => tmdbToMediaItem(m, "MOVIE")),
+        ...tvShows.map((t) => tmdbToMediaItem(t, "SERIES")),
+      ];
+
+      // Prioritize items that have rich backdrop imagery
+      const withBackdrops = all.filter((i) => Boolean(i.backdropImage));
+      const uniqueBackdrops = deduplicateMedia(withBackdrops);
+
+      setLandscapeItems(uniqueBackdrops.slice(0, 6));
+    } catch (err) {
+      console.error("Failed to fetch landscape items", err);
+      setLandscapeItems([]);
+    } finally {
+      setLandscapeLoading(false);
+    }
+  }, []);
+
+  // ── Fetch Sidebar Leaderboard ("Most Interested") ───────────────────────────
+  const fetchLeaderboard = useCallback(async () => {
+    setLeaderboardLoading(true);
+    try {
+      const trendingAll = await fetchTrendingAll();
+      const mapped = trendingAll.map((item) => tmdbToMediaItem(item));
+      const uniqueLeaderboard = deduplicateMedia(mapped);
+
+      // Sort by popularity / vote score
+      uniqueLeaderboard.sort(
+        (a, b) => (b.voteAverage || 0) - (a.voteAverage || 0)
+      );
+
+      setLeaderboardItems(uniqueLeaderboard.slice(0, 5));
+    } catch (err) {
+      console.error("Failed to fetch leaderboard", err);
+      setLeaderboardItems([]);
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
+  // ── Effects ─────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchPosters(category);
+  }, [category, fetchPosters]);
+
+  useEffect(() => {
+    fetchLandscape();
+    fetchLeaderboard();
+  }, [fetchLandscape, fetchLeaderboard]);
+
+  const activeCategoryLabel =
+    category === "ALL"
+      ? "All Media"
+      : category === "MOVIE"
+        ? "Movies"
+        : category === "SERIES"
+          ? "Series"
+          : category === "ANIME"
+            ? "Anime"
+            : category === "GAME"
+              ? "Games"
+              : "Books";
+
+  return (
+    <div className="min-h-screen bg-[#09090b] text-zinc-100">
+      {/* 1. Top Unified Navigation Bar with Media Type Filter Dropdown */}
+      <Navbar
+        selectedCategory={category}
+        onSelectCategory={setCategory}
+      />
+
+      {/* Unified Page Container: Perfectly Aligns Nav and Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-8 pb-16">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* ═══════════ MAIN FEED (9 cols) ═══════════ */}
+          <main className="lg:col-span-9 space-y-10 min-w-0">
+            {/* ── Section A: "🔥 Talk Of The Town" (Poster Shelf) ── */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2">
+                    <span className="text-xl">🔥</span> Talk Of The Town
+                  </h2>
+                  <span className="text-[11px] font-medium text-zinc-400 bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full">
+                    {activeCategoryLabel}
+                  </span>
+                </div>
+                <span className="text-xs text-zinc-500 font-medium">
+                  {postersLoading ? "Updating..." : `${posterItems.length} Titles`}
+                </span>
+              </div>
+
+              {postersLoading ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <PosterSkeleton key={i} />
+                  ))}
+                </div>
+              ) : posterItems.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {posterItems.map((item) => (
+                    <PosterCard
+                      key={item.id || `${item.mediaType}-${item.externalId}`}
+                      item={item}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 rounded-2xl border border-white/[0.06] bg-zinc-900/20">
+                  <p className="text-sm text-zinc-400">
+                    No items found for this category.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            {/* ── Section B: "📺 Watch Now" (Landscape Banner Shelf) ── */}
+            <section>
+              <h2 className="text-lg font-semibold text-white mb-4 tracking-tight flex items-center gap-2">
+                <span className="text-xl">📺</span> Watch Now
+              </h2>
+
+              {landscapeLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <LandscapeSkeleton key={i} />
+                  ))}
+                </div>
+              ) : landscapeItems.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {landscapeItems.map((item) => (
+                    <LandscapeCard
+                      key={item.id || `${item.mediaType}-${item.externalId}`}
+                      item={item}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          </main>
+
+          {/* ═══════════ SIDEBAR (3 cols) ═══════════ */}
+          <aside className="lg:col-span-3">
+            <div className="lg:sticky lg:top-[80px] space-y-5">
+              {/* Top Widget: Streaming Hub / Quick Verdict */}
+              <StreamingHub />
+
+              {/* "Most Interested" Leaderboard */}
+              {leaderboardLoading ? (
+                <LeaderboardSkeleton />
+              ) : (
+                <Leaderboard items={leaderboardItems} />
+              )}
+            </div>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }

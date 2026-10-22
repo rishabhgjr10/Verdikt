@@ -4,6 +4,7 @@ import React, { useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { mediaApi } from "@/lib/api";
 import { MediaType } from "@/types/media";
+import { MediaDetailSkeleton } from "@/components/MediaDetailSkeleton";
 
 export default function ExternalMediaPage({
   params,
@@ -31,10 +32,5 @@ export default function ExternalMediaPage({
     loadOrImport();
   }, [type, externalId, router]);
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
-      <div className="w-10 h-10 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-4" />
-      <p className="text-sm font-semibold text-slate-300">Fetching media metadata...</p>
-    </div>
-  );
+  return <MediaDetailSkeleton />;
 }

@@ -2,19 +2,38 @@
 
 import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Navbar } from "@/components/Navbar";
+import { Navbar, NavMediaCategory } from "@/components/Navbar";
 import { MediaCard } from "@/components/MediaCard";
 import { MediaItem, MediaType } from "@/types/media";
 import { mediaApi } from "@/lib/api";
-import { Search, AlertCircle, Loader2, ChevronDown } from "lucide-react";
+import {
+  fetchTrendingMovies,
+  fetchTrendingTv,
+  fetchTrendingAll,
+  fetchTrendingAnime,
+  tmdbToMediaItem,
+  deduplicateFranchises,
+  deduplicateMedia,
+} from "@/lib/tmdb";
+import { Search, AlertCircle, Loader2, ChevronDown, Sparkles } from "lucide-react";
+
+const CATEGORY_TABS: { label: string; value: NavMediaCategory }[] = [
+  { label: "All", value: "ALL" },
+  { label: "Movies", value: "MOVIE" },
+  { label: "Series", value: "SERIES" },
+  { label: "Anime", value: "ANIME" },
+  { label: "Games", value: "GAME" },
+  { label: "Books", value: "BOOK" },
+];
 
 function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
   const query = searchParams.get("q") || "";
-  const mediaTypeParam = (searchParams.get("type") || "ALL") as MediaType | "ALL";
+  const initialCategory = (searchParams.get("type") || "ALL") as NavMediaCategory;
 
+  const [selectedCategory, setSelectedCategory] = useState<NavMediaCategory>(initialCategory);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -22,61 +41,97 @@ function SearchContent() {
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Sync state if URL param changes
+  useEffect(() => {
+    const urlType = searchParams.get("type") as NavMediaCategory;
+    if (urlType && urlType !== selectedCategory) {
+      setSelectedCategory(urlType);
+    }
+  }, [searchParams]);
+
   const getItemKey = (item: MediaItem, index: number) =>
     item.id || (item.externalId ? `${item.mediaType}-${item.externalId}` : `item-${index}`);
 
-  const fetchItemsForPage = async (pageToFetch: number): Promise<MediaItem[]> => {
+  const fetchItems = async (cat: NavMediaCategory, pageToFetch: number): Promise<MediaItem[]> => {
     const searchTerm = query.trim();
+
+    // 1. If explicit search query is provided
     if (searchTerm) {
-      return await mediaApi.search(searchTerm, mediaTypeParam, pageToFetch);
-    } else if (mediaTypeParam === "ALL") {
-      const [movies, series, books] = await Promise.all([
-        mediaApi.search("Dune", "MOVIE", pageToFetch).catch(() => [] as MediaItem[]),
-        mediaApi.search("Breaking Bad", "SERIES", pageToFetch).catch(() => [] as MediaItem[]),
-        mediaApi.search("Harry Potter", "BOOK", pageToFetch).catch(() => [] as MediaItem[]),
-      ]);
-      const merged: MediaItem[] = [];
-      const maxPer = 8;
-      merged.push(...movies.slice(0, maxPer));
-      merged.push(...series.slice(0, maxPer));
-      merged.push(...books.slice(0, maxPer));
-      return merged;
-    } else {
-      const seedQueries: Record<string, string> = {
-        MOVIE: "Avengers",
-        SERIES: "Breaking Bad",
-        ANIME: "Naruto",
-        GAME: "Zelda",
-        BOOK: "Harry Potter",
-      };
-      const seed = seedQueries[mediaTypeParam] || "popular";
-      return await mediaApi.search(seed, mediaTypeParam, pageToFetch);
+      const typeParam = cat === "ALL" ? "ALL" : cat;
+      const results = await mediaApi.search(searchTerm, typeParam, pageToFetch);
+      return deduplicateMedia(results);
     }
+
+    // 2. Browsing trending catalog when search input is blank
+    if (pageToFetch === 1) {
+      if (cat === "ALL") {
+        const trending = await fetchTrendingAll();
+        return deduplicateFranchises(trending.map((t) => tmdbToMediaItem(t)));
+      } else if (cat === "MOVIE") {
+        const movies = await fetchTrendingMovies();
+        return deduplicateFranchises(movies.map((m) => tmdbToMediaItem(m, "MOVIE")));
+      } else if (cat === "SERIES") {
+        const series = await fetchTrendingTv();
+        return deduplicateFranchises(series.map((s) => tmdbToMediaItem(s, "SERIES")));
+      } else if (cat === "ANIME") {
+        const anime = await fetchTrendingAnime();
+        const mapped = anime.map((a) => tmdbToMediaItem(a, "SERIES"));
+        if (mapped.length < 5) {
+          const backendAnime = await mediaApi.search("anime", "ANIME", 1).catch(() => [] as MediaItem[]);
+          return deduplicateMedia([...mapped, ...backendAnime]);
+        }
+        return deduplicateFranchises(mapped);
+      } else if (cat === "GAME") {
+        const games = await mediaApi.search("popular", "GAME", 1).catch(() => [] as MediaItem[]);
+        return deduplicateMedia(games);
+      } else if (cat === "BOOK") {
+        const books = await mediaApi.search("popular", "BOOK", 1).catch(() => [] as MediaItem[]);
+        return deduplicateMedia(books);
+      }
+    }
+
+    // Secondary pages fallback to backend search
+    const fallbackSeed = cat === "ALL" ? "popular" : cat.toLowerCase();
+    const results = await mediaApi.search(fallbackSeed, cat === "ALL" ? "ALL" : cat, pageToFetch);
+    return deduplicateMedia(results);
   };
 
   useEffect(() => {
-    async function performInitialSearch() {
+    async function loadResults() {
       setIsLoading(true);
       setError(null);
       setPage(1);
       setHasMore(true);
 
       try {
-        const initialResults = await fetchItemsForPage(1);
+        const initialResults = await fetchItems(selectedCategory, 1);
         setItems(initialResults);
         if (initialResults.length === 0) {
           setHasMore(false);
         }
       } catch (err: any) {
         console.error("Search error", err);
-        setError("Failed to fetch search results. Please check your backend connection.");
+        setError("Failed to fetch search results. Please check your connection.");
       } finally {
         setIsLoading(false);
       }
     }
 
-    performInitialSearch();
-  }, [query, mediaTypeParam]);
+    loadResults();
+  }, [query, selectedCategory]);
+
+  const handleCategoryClick = (cat: NavMediaCategory) => {
+    setSelectedCategory(cat);
+    // Update URL query parameters smoothly without page reload
+    const newParams = new URLSearchParams(searchParams.toString());
+    if (cat === "ALL") {
+      newParams.delete("type");
+    } else {
+      newParams.set("type", cat);
+    }
+    const targetUrl = newParams.toString() ? `/search?${newParams.toString()}` : "/search";
+    router.replace(targetUrl, { scroll: false });
+  };
 
   const handleLoadMore = async () => {
     if (isFetchingMore || !hasMore) return;
@@ -84,17 +139,13 @@ function SearchContent() {
     const nextPage = page + 1;
 
     try {
-      const newItems = await fetchItemsForPage(nextPage);
+      const newItems = await fetchItems(selectedCategory, nextPage);
       if (newItems.length === 0) {
         setHasMore(false);
       } else {
         setItems((prevItems) => {
-          const existingKeys = new Set(
-            prevItems.map((item, idx) => getItemKey(item, idx))
-          );
-          const filteredNew = newItems.filter(
-            (item, idx) => !existingKeys.has(getItemKey(item, idx))
-          );
+          const existingKeys = new Set(prevItems.map((item, idx) => getItemKey(item, idx)));
+          const filteredNew = newItems.filter((item, idx) => !existingKeys.has(getItemKey(item, idx)));
           if (filteredNew.length === 0) {
             setHasMore(false);
           }
@@ -109,60 +160,84 @@ function SearchContent() {
     }
   };
 
-  const categoryLabels: Record<string, string> = {
-    ALL: "All Media",
-    MOVIE: "Movies",
-    SERIES: "Series",
-    ANIME: "Anime",
-    GAME: "Games",
-    BOOK: "Books",
-  };
-
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
-      <Navbar initialQuery={query} initialType={mediaTypeParam} />
+    <div className="min-h-screen flex flex-col bg-[#09090b] text-zinc-100">
+      <Navbar
+        selectedCategory={selectedCategory}
+        onSelectCategory={handleCategoryClick}
+        initialQuery={query}
+      />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-1 w-full">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
         {/* Header Summary */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 pb-6 border-b border-slate-900">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/[0.06]">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-100">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               {query ? (
                 <>
                   Search Results for <span className="text-violet-400">&ldquo;{query}&rdquo;</span>
                 </>
-              ) : mediaTypeParam !== "ALL" ? (
-                <>
-                  Browse <span className="text-violet-400">{categoryLabels[mediaTypeParam] || mediaTypeParam}</span>
-                </>
               ) : (
-                "Trending Across All Media"
+                "Browse Media Catalog"
               )}
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Showing results filtered by <span className="font-semibold text-slate-300">{categoryLabels[mediaTypeParam] || mediaTypeParam}</span>
+            <p className="text-xs text-zinc-500 mt-1">
+              {isLoading ? (
+                "Scanning catalog..."
+              ) : (
+                <span>
+                  {items.length} titles found across{" "}
+                  <span className="text-zinc-300 font-medium capitalize">
+                    {selectedCategory === "ALL" ? "All Categories" : selectedCategory.toLowerCase()}
+                  </span>
+                </span>
+              )}
             </p>
           </div>
         </div>
 
+        {/* Category Filter Pills Directly Underneath Header */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+          {CATEGORY_TABS.map((tab) => {
+            const isActive = selectedCategory === tab.value;
+            return (
+              <button
+                key={tab.value}
+                onClick={() => handleCategoryClick(tab.value)}
+                className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                  isActive
+                    ? "bg-zinc-800 text-white border border-white/10 shadow-sm"
+                    : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Error Alert */}
         {error && (
-          <div className="flex items-center gap-3 p-4 mb-8 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 text-sm">
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 text-sm">
             <AlertCircle className="w-5 h-5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Results Grid */}
+        {/* 2:3 Responsive Grid (grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4) */}
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="aspect-[2/3] rounded-xl bg-slate-900 animate-pulse border border-slate-800" />
+              <div key={i} className="space-y-2">
+                <div className="aspect-[2/3] rounded-xl bg-zinc-900 animate-pulse border border-white/[0.04]" />
+                <div className="h-3.5 w-3/4 bg-zinc-800 animate-pulse rounded" />
+                <div className="h-3 w-1/2 bg-zinc-800/60 animate-pulse rounded" />
+              </div>
             ))}
           </div>
         ) : items.length > 0 ? (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {items.map((item, index) => (
                 <MediaCard key={getItemKey(item, index)} item={item} />
               ))}
@@ -174,7 +249,7 @@ function SearchContent() {
                 <button
                   onClick={handleLoadMore}
                   disabled={isFetchingMore}
-                  className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-200 text-sm font-bold shadow-lg transition-all disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-8 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-white text-xs font-bold transition-all disabled:opacity-50 cursor-pointer shadow-lg hover:border-violet-500/40"
                 >
                   {isFetchingMore ? (
                     <>
@@ -184,7 +259,7 @@ function SearchContent() {
                   ) : (
                     <>
                       <span>Load More Results</span>
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                      <ChevronDown className="w-4 h-4 text-zinc-400" />
                     </>
                   )}
                 </button>
@@ -192,11 +267,11 @@ function SearchContent() {
             )}
           </>
         ) : (
-          <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800 max-w-lg mx-auto">
-            <Search className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-slate-200">No media items found</h3>
-            <p className="mt-1 text-xs text-slate-400">
-              Try searching with different keywords or switching media categories.
+          <div className="text-center py-20 bg-zinc-900/30 rounded-2xl border border-white/[0.06] max-w-lg mx-auto">
+            <Search className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-white">No media items found</h3>
+            <p className="mt-1 text-xs text-zinc-400">
+              Try searching with different keywords or choosing another category filter.
             </p>
           </div>
         )}
@@ -207,7 +282,16 @@ function SearchContent() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">Loading search...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#09090b] text-zinc-100 flex items-center justify-center">
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <Sparkles className="w-4 h-4 text-violet-400 animate-spin" />
+            <span>Loading search catalog...</span>
+          </div>
+        </div>
+      }
+    >
       <SearchContent />
     </Suspense>
   );
