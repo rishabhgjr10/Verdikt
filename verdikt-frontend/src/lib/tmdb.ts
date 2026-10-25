@@ -300,7 +300,7 @@ export async function fetchTmdbRecommendations(
   tmdbId: string | number
 ): Promise<TmdbItem[]> {
   try {
-    const endpoint = type === "SERIES" ? "tv" : "movie";
+    const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
     const res = await fetch(
       `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/recommendations?api_key=${TMDB_API_KEY}&language=en-US`
     );
@@ -308,7 +308,7 @@ export async function fetchTmdbRecommendations(
     const data = await res.json();
     return (data.results || []).map((item: TmdbItem) => ({
       ...item,
-      media_type: type === "SERIES" ? "tv" : "movie",
+      media_type: type === "SERIES" || type === "ANIME" ? "tv" : "movie",
     }));
   } catch (err) {
     console.error(`Failed to fetch recommendations for ${tmdbId}`, err);

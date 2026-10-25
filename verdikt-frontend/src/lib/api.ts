@@ -40,6 +40,8 @@ export const authApi = {
   },
 };
 
+const inFlightExternalImports = new Map<string, Promise<MediaItem>>();
+
 export const mediaApi = {
   search: async (
     query: string,
@@ -57,9 +59,25 @@ export const mediaApi = {
     const response = await api.get<MediaItem>(`/media/${id}`);
     return response.data;
   },
-  getByExternalId: async (mediaType: MediaType, externalId: string): Promise<MediaItem> => {
-    const response = await api.get<MediaItem>(`/media/external/${mediaType}/${externalId}`);
-    return response.data;
+  getByExternalId: async (
+    mediaType: MediaType,
+    externalId: string
+  ): Promise<MediaItem> => {
+    const key = `${mediaType}:${externalId}`;
+    const existing = inFlightExternalImports.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const requestPromise = api
+      .get<MediaItem>(`/media/external/${mediaType}/${externalId}`)
+      .then((res) => res.data)
+      .finally(() => {
+        inFlightExternalImports.delete(key);
+      });
+
+    inFlightExternalImports.set(key, requestPromise);
+    return requestPromise;
   },
 };
 

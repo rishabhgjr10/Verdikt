@@ -3,6 +3,8 @@ package com.verdikt.api.service.external;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.verdikt.api.MediaType;
 import com.verdikt.api.dto.MediaItemDTO;
+import com.verdikt.api.exception.ExternalProviderException;
+import com.verdikt.api.exception.ResourceNotFoundException;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
@@ -38,13 +40,13 @@ public class TmdbService {
 
         this.apiKey = apiKey;
 
-        // Dedicated Netty HttpClient with aggressive timeouts for local-dev resilience
+        // Dedicated Netty HttpClient with 8s timeout for external resilience
         HttpClient httpClient = HttpClient.create()
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
-                .responseTimeout(Duration.ofSeconds(10))
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 8_000)
+                .responseTimeout(Duration.ofSeconds(8))
                 .doOnConnected(conn ->
-                        conn.addHandlerLast(new ReadTimeoutHandler(10, TimeUnit.SECONDS))
-                            .addHandlerLast(new WriteTimeoutHandler(10, TimeUnit.SECONDS)));
+                        conn.addHandlerLast(new ReadTimeoutHandler(8, TimeUnit.SECONDS))
+                            .addHandlerLast(new WriteTimeoutHandler(8, TimeUnit.SECONDS)));
 
         this.tmdbClient = WebClient.builder()
                 .baseUrl(baseUrl)
@@ -208,24 +210,30 @@ public class TmdbService {
                             .queryParam("append_to_response", "videos,watch/providers")
                             .build(externalId))
                     .retrieve()
+                    .onStatus(status -> status.value() == 404,
+                            resp -> Mono.error(new ResourceNotFoundException("Movie not found with external id: " + externalId)))
+                    .onStatus(status -> status.is5xxServerError(),
+                            resp -> Mono.error(new ExternalProviderException("TMDB server error: " + resp.statusCode().value())))
                     .bodyToMono(JsonNode.class)
-                    .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(1)))
-                    .onErrorResume(e -> {
-                        logNetworkWarning("fetchMovieDetails", "id=" + externalId, e);
-                        return Mono.empty();
-                    })
+                    .timeout(Duration.ofSeconds(8))
+                    .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
+                            .filter(t -> !(t instanceof ResourceNotFoundException)))
                     .block();
 
             if (node == null) {
-                return null;
+                throw new ResourceNotFoundException("Movie not found with external id: " + externalId);
             }
 
             MediaItemDTO dto = mapMovieNodeToDTO(node);
             extractExtraDetails(node, dto);
             return dto;
+        } catch (ResourceNotFoundException e) {
+            throw e;
+        } catch (ExternalProviderException e) {
+            throw e;
         } catch (Exception e) {
             logNetworkWarning("fetchMovieDetails", "id=" + externalId, e);
-            return null;
+            throw new ExternalProviderException("External provider (TMDB) failed or timed out for ID: " + externalId, e);
         }
     }
 
@@ -238,24 +246,30 @@ public class TmdbService {
                             .queryParam("append_to_response", "videos,watch/providers")
                             .build(externalId))
                     .retrieve()
+                    .onStatus(status -> status.value() == 404,
+                            resp -> Mono.error(new ResourceNotFoundException("Series not found with external id: " + externalId)))
+                    .onStatus(status -> status.is5xxServerError(),
+                            resp -> Mono.error(new ExternalProviderException("TMDB server error: " + resp.statusCode().value())))
                     .bodyToMono(JsonNode.class)
-                    .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(1)))
-                    .onErrorResume(e -> {
-                        logNetworkWarning("fetchSeriesDetails", "id=" + externalId, e);
-                        return Mono.empty();
-                    })
+                    .timeout(Duration.ofSeconds(8))
+                    .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
+                            .filter(t -> !(t instanceof ResourceNotFoundException)))
                     .block();
 
             if (node == null) {
-                return null;
+                throw new ResourceNotFoundException("Series not found with external id: " + externalId);
             }
 
             MediaItemDTO dto = mapTvNodeToDTO(node, mediaType);
             extractExtraDetails(node, dto);
             return dto;
+        } catch (ResourceNotFoundException e) {
+            throw e;
+        } catch (ExternalProviderException e) {
+            throw e;
         } catch (Exception e) {
             logNetworkWarning("fetchSeriesDetails", "id=" + externalId, e);
-            return null;
+            throw new ExternalProviderException("External provider (TMDB) failed or timed out for ID: " + externalId, e);
         }
     }
 

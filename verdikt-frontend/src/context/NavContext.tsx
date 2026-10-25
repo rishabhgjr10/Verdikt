@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useState } from "react";
 import { NavMediaCategory } from "@/components/Navbar";
 
+export type { NavMediaCategory };
+
 interface NavContextType {
   activeCategory: NavMediaCategory | null;
   setActiveCategory: (cat: NavMediaCategory | null) => void;

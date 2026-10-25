@@ -5,6 +5,7 @@ import com.verdikt.api.MediaType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,6 +14,8 @@ import java.util.UUID;
 public interface MediaItemRepository extends JpaRepository<MediaItem, UUID> {
 
     Optional<MediaItem> findByExternalIdAndMediaType(String externalId, MediaType mediaType);
+
+    Optional<MediaItem> findFirstByExternalIdAndMediaTypeIn(String externalId, Collection<MediaType> mediaTypes);
 
     List<MediaItem> findByMediaType(MediaType mediaType);
 

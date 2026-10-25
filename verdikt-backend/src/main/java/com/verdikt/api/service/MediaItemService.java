@@ -8,6 +8,7 @@ import com.verdikt.api.repository.MediaItemRepository;
 import com.verdikt.api.service.external.UnifiedMediaSearchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,6 +27,7 @@ public class MediaItemService {
 
     private final MediaItemRepository mediaItemRepository;
     private final UnifiedMediaSearchService unifiedMediaSearchService;
+    private final ConcurrentHashMap<String, Object> importLocks = new ConcurrentHashMap<>();
 
     public MediaItemService(MediaItemRepository mediaItemRepository, UnifiedMediaSearchService unifiedMediaSearchService) {
         this.mediaItemRepository = mediaItemRepository;
@@ -76,10 +79,12 @@ public class MediaItemService {
                     continue;
                 }
                 try {
-                    Optional<MediaItem> existing = mediaItemRepository.findByExternalIdAndMediaType(
-                            ext.getExternalId(), ext.getMediaType());
+                    List<MediaType> candidates = getCandidateMediaTypes(ext.getMediaType());
+                    Optional<MediaItem> existing = mediaItemRepository.findFirstByExternalIdAndMediaTypeIn(
+                            ext.getExternalId(), candidates);
                     if (existing.isPresent()) {
                         ext.setId(existing.get().getId());
+                        ext.setMediaType(existing.get().getMediaType());
                     }
                 } catch (Exception e) {
                     log.warn("Failed checking local DB for existing item [extId={}]: {}", ext.getExternalId(), e.getMessage());
@@ -106,22 +111,60 @@ public class MediaItemService {
         return MediaItemDTO.fromEntity(entity);
     }
 
-    @Transactional
     public MediaItem getOrCreateMediaItem(String externalId, MediaType mediaType) {
-        Optional<MediaItem> existing = mediaItemRepository.findByExternalIdAndMediaType(externalId, mediaType);
+        if (externalId == null || mediaType == null) {
+            throw new IllegalArgumentException("externalId and mediaType cannot be null");
+        }
+
+        List<MediaType> candidates = getCandidateMediaTypes(mediaType);
+
+        // 1. Cheap check before calling external provider
+        Optional<MediaItem> existing = mediaItemRepository.findFirstByExternalIdAndMediaTypeIn(externalId, candidates);
         if (existing.isPresent()) {
             return existing.get();
         }
 
-        MediaItemDTO externalDto = unifiedMediaSearchService.fetchExternalDetails(externalId, mediaType);
-        if (externalDto == null) {
-            throw new ResourceNotFoundException("Media item not found from external provider: " + externalId + " (" + mediaType + ")");
-        }
+        // Lock keyed by external ID (normalized for TV series / anime namespace)
+        String lockKey = (mediaType == MediaType.SERIES || mediaType == MediaType.ANIME ? "TV:" : mediaType.name() + ":") + externalId;
+        Object lock = importLocks.computeIfAbsent(lockKey, k -> new Object());
 
-        return saveDTOToEntity(externalDto);
+        synchronized (lock) {
+            try {
+                // Re-check DB in case another thread just completed the import
+                existing = mediaItemRepository.findFirstByExternalIdAndMediaTypeIn(externalId, candidates);
+                if (existing.isPresent()) {
+                    return existing.get();
+                }
+
+                // 2. Fetch from external provider (resolves SERIES -> ANIME rule inside provider mapping)
+                MediaItemDTO externalDto = unifiedMediaSearchService.fetchExternalDetails(externalId, mediaType);
+                if (externalDto == null) {
+                    throw new ResourceNotFoundException("Media item not found from external provider: " + externalId + " (" + mediaType + ")");
+                }
+
+                // 3. Resolve final media type FIRST, then check DB by (externalId, resolvedType)
+                MediaType resolvedType = externalDto.getMediaType() != null ? externalDto.getMediaType() : mediaType;
+                Optional<MediaItem> existingResolved = mediaItemRepository.findByExternalIdAndMediaType(externalId, resolvedType);
+                if (existingResolved.isPresent()) {
+                    return existingResolved.get();
+                }
+
+                // 4. Save with race protection against concurrent insert collisions
+                try {
+                    return saveDTOToEntity(externalDto);
+                } catch (DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException e) {
+                    log.warn("Concurrent insert collision for externalId='{}' (resolvedType={}), re-fetching: {}",
+                            externalId, resolvedType, e.getMessage());
+                    return mediaItemRepository.findByExternalIdAndMediaType(externalId, resolvedType)
+                            .or(() -> mediaItemRepository.findFirstByExternalIdAndMediaTypeIn(externalId, candidates))
+                            .orElseThrow(() -> new IllegalStateException("Failed to retrieve media item after concurrent insert", e));
+                }
+            } finally {
+                importLocks.remove(lockKey, lock);
+            }
+        }
     }
 
-    @Transactional
     public MediaItem getOrCreateFromDTO(MediaItemDTO dto) {
         if (dto == null) {
             throw new IllegalArgumentException("MediaItemDTO details are required");
@@ -133,12 +176,29 @@ public class MediaItemService {
             }
         }
         if (dto.getExternalId() != null && dto.getMediaType() != null) {
-            Optional<MediaItem> existing = mediaItemRepository.findByExternalIdAndMediaType(dto.getExternalId(), dto.getMediaType());
+            List<MediaType> candidates = getCandidateMediaTypes(dto.getMediaType());
+            Optional<MediaItem> existing = mediaItemRepository.findFirstByExternalIdAndMediaTypeIn(dto.getExternalId(), candidates);
             if (existing.isPresent()) {
                 return existing.get();
             }
         }
-        return saveDTOToEntity(dto);
+        try {
+            return saveDTOToEntity(dto);
+        } catch (DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException e) {
+            log.warn("Concurrent insert collision in getOrCreateFromDTO for externalId='{}', re-fetching", dto.getExternalId());
+            return mediaItemRepository.findByExternalIdAndMediaType(dto.getExternalId(), dto.getMediaType())
+                    .orElseThrow(() -> new IllegalStateException("Failed to retrieve media item after concurrent insert", e));
+        }
+    }
+
+    public List<MediaType> getCandidateMediaTypes(MediaType requestedType) {
+        if (requestedType == MediaType.SERIES) {
+            return List.of(MediaType.SERIES, MediaType.ANIME);
+        } else if (requestedType == MediaType.ANIME) {
+            return List.of(MediaType.ANIME, MediaType.SERIES);
+        } else {
+            return List.of(requestedType);
+        }
     }
 
     private MediaItem saveDTOToEntity(MediaItemDTO dto) {
