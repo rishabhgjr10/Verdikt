@@ -40,7 +40,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <div className="min-h-screen text-zinc-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
       {/* Centered Atmosphere Background Gradient */}
       <div className="absolute inset-0 bg-gradient-to-tr from-purple-950/20 via-transparent to-zinc-900/10 pointer-events-none" />
       <div className="w-[500px] h-[350px] bg-purple-600/10 blur-[130px] rounded-full pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />

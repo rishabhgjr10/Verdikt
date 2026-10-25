@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { Flame, TrendingUp } from "lucide-react";
 import { MediaItem } from "@/types/media";
-import { sanitizeImageUrl } from "@/lib/tmdb";
+import { PosterImage } from "@/components/PosterImage";
 
 interface LeaderboardProps {
   items: (MediaItem & { voteAverage?: number })[];
@@ -14,9 +14,9 @@ export function Leaderboard({ items }: LeaderboardProps) {
   if (!items.length) return null;
 
   return (
-    <div className="rounded-2xl bg-zinc-900/40 border border-white/[0.08] p-5">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+    <div className="catalog-widget catalog-interested bg-[#09090B]/90 border border-white/10 rounded-2xl p-5 flex flex-col gap-4 backdrop-blur-xl shadow-xl">
+      {/* Widget Header */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
             <Flame className="w-3.5 h-3.5 text-orange-400" />
@@ -30,14 +30,15 @@ export function Leaderboard({ items }: LeaderboardProps) {
         </span>
       </div>
 
-      {/* Ranked List */}
+      {/* List Items */}
       <div className="space-y-4">
         {items.slice(0, 5).map((item, idx) => {
-          const img = sanitizeImageUrl(item.coverImage);
           const href =
             item.id && !item.id.startsWith("tmdb-")
               ? `/media/${item.id}`
-              : `/media/external/${item.mediaType}/${encodeURIComponent(item.externalId || item.id)}`;
+              : `/media/external/${item.mediaType}/${encodeURIComponent(
+                  item.externalId || item.id
+                )}`;
 
           const typeLabel =
             item.mediaType === "MOVIE"
@@ -50,44 +51,36 @@ export function Leaderboard({ items }: LeaderboardProps) {
             <Link
               key={item.id || item.externalId || idx}
               href={href}
-              className="flex items-center gap-3.5 group"
+              className="flex items-center gap-3.5 group p-1 -mx-1 rounded-xl hover:bg-white/[0.02] transition-colors"
             >
-              {/* Rank Number */}
+              {/* Rank Number: Large tabular bold number */}
               <span className="text-xl md:text-2xl font-bold text-zinc-500 group-hover:text-violet-400 transition-colors w-6 text-center shrink-0 leading-none tabular-nums">
                 {idx + 1}
               </span>
 
-              {/* Poster Thumbnail (aspect-[2/3] w-10 rounded-md border border-white/10) */}
-              <div className="aspect-[2/3] w-10 rounded-md border border-white/10 overflow-hidden shrink-0 bg-zinc-800 relative shadow-sm">
-                {img ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={img}
-                    alt={item.title}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="h-full w-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
-                    <span className="text-[8px] text-zinc-500 font-bold">
-                      {item.title.slice(0, 2).toUpperCase()}
-                    </span>
-                  </div>
-                )}
+              {/* Thumbnail: 40x56px (aspect-[2/3] w-10), rounded-md */}
+              <div className="w-10 shrink-0">
+                <PosterImage
+                  url={item.coverImage}
+                  title={item.title}
+                  mediaType={item.mediaType}
+                  releaseYear={item.releaseYear}
+                  className="rounded-md border-white/10"
+                />
               </div>
 
-              {/* Text Info */}
+              {/* Content: Title (14px, White), Subtext (12px, Year • Type), Rating */}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
                   {item.title}
                 </p>
                 <p className="text-xs text-zinc-400 leading-snug mt-0.5">
-                  {item.releaseYear || "TBA"} &middot; {typeLabel}
+                  {item.releaseYear || "TBA"} &bull; {typeLabel}
                 </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <TrendingUp className="w-3 h-3 text-orange-400 shrink-0" />
                   <span className="text-xs text-zinc-400 font-medium">
-                    {item.voteAverage ? `${item.voteAverage.toFixed(1)} Rating` : "Trending"}
+                    {item.voteAverage ? item.voteAverage.toFixed(1) : "Hot"} Rating
                   </span>
                 </div>
               </div>

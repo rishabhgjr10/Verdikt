@@ -2,9 +2,10 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Navbar, NavMediaCategory } from "@/components/Navbar";
+import { NavMediaCategory } from "@/components/Navbar";
 import { StreamingHub } from "@/components/StreamingHub";
 import { Leaderboard } from "@/components/Leaderboard";
+import { PosterImage } from "@/components/PosterImage";
 import { MediaItem, MediaType, Verdict } from "@/types/media";
 import { mediaApi } from "@/lib/api";
 import {
@@ -71,7 +72,6 @@ function titleToVerdict(title: string): Verdict {
 }
 
 function getItemHref(item: MediaItem): string {
-  // If backend database UUID
   const isUuid =
     item.id &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
@@ -85,64 +85,34 @@ function getItemHref(item: MediaItem): string {
   return `/media/external/${type}/${encodeURIComponent(extId)}`;
 }
 
-// ── Poster Card with Overlaid Frosted Verdict Chip & Styled Fallback ──────────
+// ── Poster Card with Frosted Segmented Verdict Chip ──────────────────────────
 interface FeedItem extends MediaItem {
   voteAverage?: number;
   popularity?: number;
 }
 
 function PosterCard({ item }: { item: FeedItem }) {
-  const [imgErr, setImgErr] = useState(false);
-  const img = sanitizeImageUrl(item.coverImage);
   const verdict =
     item.voteAverage !== undefined
       ? voteToVerdict(item.voteAverage)
       : titleToVerdict(item.title);
   const cfg = VERDICT_CONFIG[verdict];
-  const Icon = TYPE_ICON[item.mediaType] ?? Film;
 
   return (
-    <Link href={getItemHref(item)} className="group block">
-      {/* Poster Container */}
-      <div className="aspect-[2/3] w-full rounded-xl overflow-hidden border border-white/10 bg-zinc-900 relative shadow-sm">
-        {img && !imgErr ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={img}
-            alt={item.title}
-            onError={() => setImgErr(true)}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-            loading="lazy"
-          />
-        ) : (
-          /* Styled Fallback Card with Title Typography */
-          <div className="w-full h-full flex flex-col justify-between p-3.5 bg-gradient-to-br from-zinc-800 via-zinc-900 to-[#121215] text-zinc-300 relative border border-white/[0.04]">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase bg-white/[0.06] px-1.5 py-0.5 rounded border border-white/[0.08]">
-                {item.mediaType}
-              </span>
-            </div>
-
-            <div className="my-auto py-2 text-center">
-              <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center mx-auto mb-2 text-zinc-400">
-                <Icon className="w-4 h-4 opacity-70" />
-              </div>
-              <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-3 leading-snug tracking-tight px-1">
-                {item.title}
-              </h3>
-            </div>
-
-            <div className="text-center pt-1 border-t border-white/[0.04]">
-              <span className="text-[10px] text-zinc-500">
-                {item.releaseYear || "Verdikt"}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Overlaid Frosted Glass Verdict Chip */}
+    <Link href={getItemHref(item)} className="group block cursor-pointer">
+      <PosterImage
+        url={item.coverImage}
+        title={item.title}
+        mediaType={item.mediaType}
+        releaseYear={item.releaseYear}
+        className="shadow-sm"
+      >
+        {/* Overlaid Frosted Segmented Verdict Chip */}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
-          <span className={`text-[10px] font-semibold leading-none ${cfg.textClass}`}>
+          <span
+            className="text-[10px] font-semibold leading-none"
+            style={{ color: cfg.color }}
+          >
             {cfg.label}
           </span>
           <div className="flex items-center gap-[2.5px]">
@@ -159,17 +129,17 @@ function PosterCard({ item }: { item: FeedItem }) {
           </div>
         </div>
 
-        {/* Hover overlay sheen */}
+        {/* Hover Sheen */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 pointer-events-none" />
-      </div>
+      </PosterImage>
 
-      {/* Bottom Metadata */}
+      {/* Text Meta (Below Poster) */}
       <div className="mt-2 space-y-0.5">
         <p className="text-sm font-medium text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
           {item.title}
         </p>
         <p className="text-xs text-zinc-500 leading-none">
-          {item.releaseYear || "TBA"}
+          {item.releaseYear || "2026"}
         </p>
       </div>
     </Link>
@@ -184,7 +154,7 @@ function LandscapeCard({ item }: { item: FeedItem }) {
 
   return (
     <Link href={getItemHref(item)} className="group block cursor-pointer">
-      <div className="aspect-video w-full rounded-xl overflow-hidden border border-white/10 relative bg-zinc-900 shadow-sm">
+      <div className="aspect-video w-full rounded-xl overflow-hidden border border-white/10 relative bg-zinc-900 shadow-sm transition-all duration-300">
         {backdrop && !imgErr ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -201,16 +171,16 @@ function LandscapeCard({ item }: { item: FeedItem }) {
         )}
 
         {/* Bottom gradient fade */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent pointer-events-none" />
 
         {/* Overlaid Title */}
-        <div className="absolute bottom-0 left-0 right-0 p-3.5">
+        <div className="absolute bottom-0 left-0 right-0 p-3.5 pointer-events-none">
           <p className="text-sm font-bold text-white leading-snug line-clamp-1 drop-shadow-sm group-hover:text-violet-300 transition-colors">
             {item.title}
           </p>
         </div>
       </div>
-      <div className="mt-2">
+      <div className="mt-2 space-y-0.5">
         <p className="text-xs text-zinc-500 leading-none">
           {item.mediaType === "SERIES" ? "Series" : "Movie"} &middot;{" "}
           {item.releaseYear || "TBA"}
@@ -223,10 +193,12 @@ function LandscapeCard({ item }: { item: FeedItem }) {
 // ── Loading Skeletons ────────────────────────────────────────────────────────
 function PosterSkeleton() {
   return (
-    <div className="space-y-2">
-      <div className="aspect-[2/3] w-full rounded-xl bg-zinc-900 animate-pulse border border-white/[0.04]" />
-      <div className="h-3.5 w-3/4 rounded bg-zinc-800 animate-pulse" />
-      <div className="h-3 w-1/3 rounded bg-zinc-800/60 animate-pulse" />
+    <div className="flex flex-col gap-2">
+      <div className="aspect-[2/3] w-full rounded-xl bg-zinc-900/60 border border-white/5 animate-pulse" />
+      <div className="space-y-1.5 pt-1">
+        <div className="h-4 bg-zinc-800/80 rounded w-4/5 animate-pulse" />
+        <div className="h-3 bg-zinc-800/50 rounded w-1/3 animate-pulse" />
+      </div>
     </div>
   );
 }
@@ -234,8 +206,8 @@ function PosterSkeleton() {
 function LandscapeSkeleton() {
   return (
     <div className="space-y-2">
-      <div className="aspect-video w-full rounded-xl bg-zinc-900 animate-pulse border border-white/[0.04]" />
-      <div className="h-3.5 w-1/2 rounded bg-zinc-800 animate-pulse" />
+      <div className="aspect-video w-full rounded-xl bg-zinc-900/60 animate-pulse border border-white/[0.04]" />
+      <div className="h-3.5 w-1/2 rounded bg-zinc-800/60 animate-pulse" />
     </div>
   );
 }
@@ -281,63 +253,50 @@ export default function HomePage() {
       let items: FeedItem[] = [];
 
       if (cat === "ALL") {
-        // Query TMDB /trending/all/day
         const trendingAll = await fetchTrendingAll();
         items = trendingAll.map((item) => tmdbToMediaItem(item));
 
-        // Supplement to ensure a full discovery shelf
         if (items.length < 15) {
           const [movies, tvShows] = await Promise.all([
             fetchTrendingMovies(),
             fetchTrendingTv(),
           ]);
-          items = [
+          const combined = [
             ...items,
             ...movies.map((m) => tmdbToMediaItem(m, "MOVIE")),
             ...tvShows.map((t) => tmdbToMediaItem(t, "SERIES")),
           ];
+          items = combined;
         }
       } else if (cat === "MOVIE") {
         const movies = await fetchTrendingMovies();
         items = movies.map((m) => tmdbToMediaItem(m, "MOVIE"));
       } else if (cat === "SERIES") {
-        const tvShows = await fetchTrendingTv();
-        items = tvShows.map((t) => tmdbToMediaItem(t, "SERIES"));
+        const tv = await fetchTrendingTv();
+        items = tv.map((t) => tmdbToMediaItem(t, "SERIES"));
       } else if (cat === "ANIME") {
         const anime = await fetchTrendingAnime();
-        items = anime.map((a) => tmdbToMediaItem(a, "SERIES"));
-        if (items.length < 5) {
-          const backendAnime = await mediaApi
-            .search("anime", "ANIME", 1)
-            .catch(() => [] as MediaItem[]);
-          items = [...items, ...backendAnime];
+        items = anime.map((a) => tmdbToMediaItem(a, "ANIME"));
+      } else {
+        try {
+          const res = await mediaApi.search("", cat as MediaType);
+          items = res;
+        } catch {
+          items = [];
         }
-      } else if (cat === "GAME") {
-        const backendGames = await mediaApi
-          .search("popular", "GAME", 1)
-          .catch(() => [] as MediaItem[]);
-        items = backendGames;
-      } else if (cat === "BOOK") {
-        const backendBooks = await mediaApi
-          .search("popular", "BOOK", 1)
-          .catch(() => [] as MediaItem[]);
-        items = backendBooks;
       }
 
-      // ── Smart Franchise Grouping ──────────────────────────────────────────
-      // Group incoming titles by their base franchise/collection name,
-      // displaying ONLY the single highest-rated / most popular entry per franchise.
-      const franchiseDeduplicated = deduplicateFranchises(items);
-      setPosterItems(franchiseDeduplicated.slice(0, 15));
+      const deduplicated = deduplicateFranchises(items);
+      setPosterItems(deduplicated.slice(0, 15));
     } catch (err) {
-      console.error("Failed to fetch poster shelf", err);
+      console.error("Failed to fetch posters", err);
       setPosterItems([]);
     } finally {
       setPostersLoading(false);
     }
   }, []);
 
-  // ── Fetch Landscape Shelf ("Watch Now") with 16:9 Backdrops ─────────────────
+  // ── Fetch "Watch Now" (Landscape Banners) ──────────────────────────────────
   const fetchLandscape = useCallback(async () => {
     setLandscapeLoading(true);
     try {
@@ -351,7 +310,6 @@ export default function HomePage() {
         ...tvShows.map((t) => tmdbToMediaItem(t, "SERIES")),
       ];
 
-      // Prioritize items that have rich backdrop imagery
       const withBackdrops = all.filter((i) => Boolean(i.backdropImage));
       const uniqueBackdrops = deduplicateMedia(withBackdrops);
 
@@ -372,7 +330,6 @@ export default function HomePage() {
       const mapped = trendingAll.map((item) => tmdbToMediaItem(item));
       const uniqueLeaderboard = deduplicateMedia(mapped);
 
-      // Sort by popularity / vote score
       uniqueLeaderboard.sort(
         (a, b) => (b.voteAverage || 0) - (a.voteAverage || 0)
       );
@@ -410,20 +367,15 @@ export default function HomePage() {
               : "Books";
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100">
-      {/* 1. Top Unified Navigation Bar with Media Type Filter Dropdown */}
-      <Navbar
-        selectedCategory={category}
-        onSelectCategory={setCategory}
-      />
-
-      {/* Unified Page Container: Perfectly Aligns Nav and Main Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8 pb-16">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* ═══════════ MAIN FEED (9 cols) ═══════════ */}
-          <main className="lg:col-span-9 space-y-10 min-w-0">
+    <div className="verdikt-app verdikt-catalog min-h-screen">
+      {/* Main Layout Wrapper (catalog-content container) */}
+      <div className="catalog-content">
+        <div className="catalog-layout">
+          {/* ═══════════ LEFT COLUMN (Main Content) ═══════════ */}
+          <main className="catalog-main">
             {/* ── Section A: "🔥 Talk Of The Town" (Poster Shelf) ── */}
             <section>
+              {/* Section Header */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2">
@@ -438,14 +390,15 @@ export default function HomePage() {
                 </span>
               </div>
 
+              {/* 5-Column Poster Grid */}
               {postersLoading ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                <div className="catalog-poster-grid">
                   {Array.from({ length: 10 }).map((_, i) => (
                     <PosterSkeleton key={i} />
                   ))}
                 </div>
               ) : posterItems.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                <div className="catalog-poster-grid">
                   {posterItems.map((item) => (
                     <PosterCard
                       key={item.id || `${item.mediaType}-${item.externalId}`}
@@ -454,7 +407,7 @@ export default function HomePage() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-12 rounded-2xl border border-white/[0.06] bg-zinc-900/20">
+                <div className="text-center py-12 rounded-2xl border border-white/5 bg-zinc-900/20">
                   <p className="text-sm text-zinc-400">
                     No items found for this category.
                   </p>
@@ -464,18 +417,20 @@ export default function HomePage() {
 
             {/* ── Section B: "📺 Watch Now" (Landscape Banner Shelf) ── */}
             <section>
-              <h2 className="text-lg font-semibold text-white mb-4 tracking-tight flex items-center gap-2">
-                <span className="text-xl">📺</span> Watch Now
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2">
+                  <span className="text-xl">📺</span> Watch Now
+                </h2>
+              </div>
 
               {landscapeLoading ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                <div className="catalog-watch-grid">
                   {Array.from({ length: 6 }).map((_, i) => (
                     <LandscapeSkeleton key={i} />
                   ))}
                 </div>
               ) : landscapeItems.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                <div className="catalog-watch-grid">
                   {landscapeItems.map((item) => (
                     <LandscapeCard
                       key={item.id || `${item.mediaType}-${item.externalId}`}
@@ -487,13 +442,13 @@ export default function HomePage() {
             </section>
           </main>
 
-          {/* ═══════════ SIDEBAR (3 cols) ═══════════ */}
-          <aside className="lg:col-span-3">
-            <div className="lg:sticky lg:top-[80px] space-y-5">
-              {/* Top Widget: Streaming Hub / Quick Verdict */}
+          {/* ═══════════ RIGHT COLUMN (Sidebar: Fixed 354px) ═══════════ */}
+          <aside className="catalog-sidebar">
+            <div className="catalog-sidebar-stack lg:sticky lg:top-[7rem]">
+              {/* Streaming Radar */}
               <StreamingHub />
 
-              {/* "Most Interested" Leaderboard */}
+              {/* Most Interested */}
               {leaderboardLoading ? (
                 <LeaderboardSkeleton />
               ) : (

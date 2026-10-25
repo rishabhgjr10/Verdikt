@@ -41,9 +41,15 @@ export const authApi = {
 };
 
 export const mediaApi = {
-  search: async (query: string, mediaType: MediaType | "ALL" = "ALL", page: number = 1): Promise<MediaItem[]> => {
+  search: async (
+    query: string,
+    mediaType: MediaType | "ALL" = "ALL",
+    page: number = 1,
+    signal?: AbortSignal
+  ): Promise<MediaItem[]> => {
     const response = await api.get<MediaItem[]>("/media/search", {
       params: { q: query, type: mediaType, page },
+      signal,
     });
     return response.data;
   },

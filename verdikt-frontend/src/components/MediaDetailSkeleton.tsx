@@ -1,19 +1,15 @@
 "use client";
 
 import React from "react";
-import { Navbar } from "./Navbar";
 
 export function MediaDetailSkeleton() {
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col relative overflow-hidden">
+    <div className="min-h-screen text-zinc-100 flex flex-col relative overflow-hidden">
       {/* Top Route Progress Bar (nprogress style violet-to-emerald shimmer) */}
       <div className="fixed top-0 left-0 right-0 z-50 h-[2px] w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-emerald-400 animate-pulse shadow-[0_0_12px_rgba(168,85,247,0.8)]" />
 
-      {/* Header */}
-      <Navbar />
-
       {/* Cinematic Skeleton Layout */}
-      <div className="max-w-7xl mx-auto px-6 py-10 w-full flex-1 space-y-10">
+      <div className="max-w-[1400px] w-[calc(100%-48px)] mx-auto px-6 pb-10 w-full flex-1 space-y-10">
         {/* Top Hero Banner Skeleton */}
         <div className="relative w-full rounded-2xl border border-white/[0.04] bg-zinc-900/60 p-6 md:p-10 overflow-hidden shadow-2xl backdrop-blur-sm">
           <div className="flex flex-col md:flex-row gap-8 items-start">

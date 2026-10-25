@@ -1,21 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import Link from "next/link";
 import { MediaItem, Verdict } from "@/types/media";
 import { voteToVerdict } from "@/lib/tmdb";
-import { Film, Tv, Sparkles, Gamepad2, BookOpen } from "lucide-react";
+import { PosterImage } from "@/components/PosterImage";
 
 interface MediaCardProps {
   item: MediaItem & { voteAverage?: number };
-}
-
-/** Converts http:// → https:// (Google Books / insecure CDN URLs) */
-function sanitizeImageUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith("http://")) return url.replace("http://", "https://");
-  if (url.startsWith("/")) return `https://image.tmdb.org/t/p/w500${url}`;
-  return url;
 }
 
 const VERDICT_CONFIG: Record<
@@ -48,14 +40,6 @@ const VERDICT_CONFIG: Record<
   },
 };
 
-const TYPE_ICON: Record<string, React.ElementType> = {
-  MOVIE: Film,
-  SERIES: Tv,
-  ANIME: Sparkles,
-  GAME: Gamepad2,
-  BOOK: BookOpen,
-};
-
 function titleToVerdict(title: string): Verdict {
   let hash = 0;
   for (let i = 0; i < title.length; i++) {
@@ -66,14 +50,15 @@ function titleToVerdict(title: string): Verdict {
 }
 
 export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
-  const [imgError, setImgError] = useState(false);
-
-  const cardHref = item.id
+  const isUuid =
+    item.id &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
+  const extId =
+    item.externalId ||
+    (item.id?.startsWith("tmdb-") ? item.id.replace("tmdb-", "") : item.id);
+  const cardHref = isUuid
     ? `/media/${item.id}`
-    : `/media/external/${item.mediaType}/${encodeURIComponent(item.externalId)}`;
-
-  const imageUrl = sanitizeImageUrl(item.coverImage);
-  const Icon = TYPE_ICON[item.mediaType] ?? Film;
+    : `/media/external/${item.mediaType}/${encodeURIComponent(extId || "")}`;
 
   const verdict =
     item.voteAverage !== undefined
@@ -83,43 +68,14 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
 
   return (
     <Link href={cardHref} className="group block">
-      {/* 2:3 Poster Container */}
-      <div className="aspect-[2/3] w-full rounded-xl overflow-hidden border border-white/10 bg-zinc-900 relative shadow-sm">
-        {imageUrl && !imgError ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt={item.title}
-            onError={() => setImgError(true)}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-            loading="lazy"
-          />
-        ) : (
-          /* Styled Fallback Card with Typography */
-          <div className="w-full h-full flex flex-col justify-between p-3.5 bg-gradient-to-br from-zinc-800 via-zinc-900 to-[#121215] text-zinc-300 relative border border-white/[0.04]">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase bg-white/[0.06] px-1.5 py-0.5 rounded border border-white/[0.08]">
-                {item.mediaType}
-              </span>
-            </div>
-
-            <div className="my-auto py-2 text-center">
-              <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center mx-auto mb-2 text-zinc-400">
-                <Icon className="w-4 h-4 opacity-70" />
-              </div>
-              <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-3 leading-snug tracking-tight px-1">
-                {item.title}
-              </h3>
-            </div>
-
-            <div className="text-center pt-1 border-t border-white/[0.04]">
-              <span className="text-[10px] text-zinc-500">
-                {item.releaseYear || "Verdikt Entry"}
-              </span>
-            </div>
-          </div>
-        )}
-
+      {/* 2:3 Poster with Shared PosterImage */}
+      <PosterImage
+        url={item.coverImage}
+        title={item.title}
+        mediaType={item.mediaType}
+        releaseYear={item.releaseYear}
+        className="shadow-sm"
+      >
         {/* Overlaid Frosted Glass Verdict Chip */}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
           <span className={`text-[10px] font-semibold leading-none ${cfg.textClass}`}>
@@ -138,19 +94,15 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
             ))}
           </div>
         </div>
+      </PosterImage>
 
-        {/* Hover overlay sheen */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 pointer-events-none" />
-      </div>
-
-      {/* Bottom Metadata */}
+      {/* Meta */}
       <div className="mt-2 space-y-0.5">
-        <p className="text-sm font-medium text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
+        <h3 className="text-sm font-semibold text-white truncate group-hover:text-violet-400 transition-colors">
           {item.title}
-        </p>
-        <p className="text-xs text-zinc-500 leading-none">
-          {item.releaseYear || "TBA"} &middot;{" "}
-          <span className="capitalize">{item.mediaType.toLowerCase()}</span>
+        </h3>
+        <p className="text-xs text-zinc-400">
+          {item.releaseYear || "TBA"} &bull; {item.mediaType}
         </p>
       </div>
     </Link>

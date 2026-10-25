@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
-import { Navbar } from "@/components/Navbar";
 import { MediaDetailSkeleton } from "@/components/MediaDetailSkeleton";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { TrailerModal } from "@/components/TrailerModal";
@@ -10,6 +9,9 @@ import { ReviewModal } from "@/components/ReviewModal";
 import { MediaItem, ReviewWithRelations, Verdict } from "@/types/media";
 import { mediaApi, reviewApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useNav } from "@/context/NavContext";
+import { NavMediaCategory } from "@/components/Navbar";
+import { PosterImage } from "@/components/PosterImage";
 import {
   getPlatformSearchUrl,
   getPlatformColor,
@@ -40,12 +42,13 @@ import {
   Layers,
 } from "lucide-react";
 
-/** Converts http:// → https:// (Google Books / insecure CDN links) */
+/** Converts http:// → https:// (Google Books / insecure CDN links) and builds high-res TMDB URLs */
 function sanitizeImageUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith("http://")) return url.replace("http://", "https://");
-  if (url.startsWith("/")) return `https://image.tmdb.org/t/p/w500${url}`;
-  return url;
+  if (!url || typeof url !== "string" || !url.trim()) return null;
+  const trimmed = url.trim();
+  if (trimmed.startsWith("http://")) return trimmed.replace("http://", "https://");
+  if (trimmed.startsWith("/")) return `https://image.tmdb.org/t/p/w1280${trimmed}`;
+  return trimmed;
 }
 
 const VERDICT_CONFIG: Record<
@@ -85,6 +88,7 @@ export default function MediaDetailPage({
 }) {
   const { id } = use(params);
   const { user } = useAuth();
+  const { setActiveCategory } = useNav();
 
   const [mediaItem, setMediaItem] = useState<MediaItem | null>(null);
   const [reviews, setReviews] = useState<ReviewWithRelations[]>([]);
@@ -151,6 +155,15 @@ export default function MediaDetailPage({
     loadData();
   }, [id]);
 
+  useEffect(() => {
+    if (mediaItem?.mediaType) {
+      setActiveCategory(mediaItem.mediaType as NavMediaCategory);
+    }
+    return () => {
+      setActiveCategory(null);
+    };
+  }, [mediaItem?.mediaType, setActiveCategory]);
+
   const toggleSpoiler = (reviewId: string) => {
     setRevealedSpoilers((prev) => ({ ...prev, [reviewId]: !prev[reviewId] }));
   };
@@ -168,8 +181,7 @@ export default function MediaDetailPage({
 
   if (error || !mediaItem) {
     return (
-      <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col">
-        <Navbar />
+      <div className="min-h-screen text-zinc-100 flex flex-col">
         <div className="max-w-md mx-auto my-20 text-center p-8 bg-zinc-900 rounded-2xl border border-white/10">
           <Sparkles className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-white">Media Title Not Found</h2>
@@ -191,43 +203,52 @@ export default function MediaDetailPage({
 
   const TypeIcon = mediaTypeConfig.icon;
 
+  const heroImg = backdropError
+    ? null
+    : (sanitizeImageUrl(mediaItem.backdropImage) || sanitizeImageUrl(mediaItem.coverImage));
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#09090b] text-zinc-100">
-      <Navbar />
+    <div className="relative min-h-screen -mt-28 flex flex-col text-zinc-100">
+      {/* Hero Backdrop Layer (FIX 1 - Seamless 640px Behind Navbar with Zero Offset) */}
+      {heroImg && (
+        <div
+          className="absolute top-0 left-0 right-0 h-[640px] z-0 overflow-hidden pointer-events-none"
+          style={{
+            maskImage:
+              "linear-gradient(to bottom, black 0%, black 55%, transparent 100%)",
+            WebkitMaskImage:
+              "linear-gradient(to bottom, black 0%, black 55%, transparent 100%)",
+          }}
+          aria-hidden="true"
+        >
+          {/* Subtle dark underlay to soften ambient violet blobs and prevent hard edges */}
+          <div className="absolute inset-0 bg-[#09090b]/40" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={heroImg}
+            alt=""
+            onError={() => setBackdropError(true)}
+            className="w-full h-full object-cover blur-3xl scale-125 opacity-50 saturate-150 pointer-events-none"
+          />
+          {/* Subtle second tint layer of dominant/poster color */}
+          <div className="absolute inset-0 bg-gradient-to-b from-purple-500/10 via-transparent to-black/30 mix-blend-overlay pointer-events-none" />
+        </div>
+      )}
 
-      {/* Hero Backdrop Section */}
-      <div className="relative w-full overflow-hidden bg-[#09090b] border-b border-white/[0.06]">
-        {sanitizeImageUrl(mediaItem.backdropImage) && !backdropError && (
-          <div className="absolute inset-0 z-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={sanitizeImageUrl(mediaItem.backdropImage)!}
-              alt={mediaItem.title}
-              onError={() => setBackdropError(true)}
-              className="w-full h-full object-cover opacity-20 filter blur-sm scale-105"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#09090b]/80 to-transparent" />
-          </div>
-        )}
-
-        <div className="relative z-10 max-w-7xl mx-auto px-6 py-10 md:py-16">
+      {/* Detail Page Content (relative z-10 with existing pt-28 clearance) */}
+      <div className="relative z-10 flex-1 flex flex-col pt-28">
+        {/* Hero Meta Header */}
+        <div className="max-w-[1400px] w-[calc(100%-48px)] mx-auto px-6 py-10 md:py-16">
           <div className="flex flex-col md:flex-row gap-8 items-start">
-            {/* Cover Poster */}
-            <div className="w-48 sm:w-56 md:w-64 shrink-0 mx-auto md:mx-0 rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-zinc-900 aspect-[2/3] relative">
-              {sanitizeImageUrl(mediaItem.coverImage) && !posterError ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={sanitizeImageUrl(mediaItem.coverImage)!}
-                  alt={mediaItem.title}
-                  onError={() => setPosterError(true)}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center p-4 text-zinc-600 bg-gradient-to-br from-zinc-800 to-zinc-900">
-                  <TypeIcon className="w-12 h-12 mb-2 opacity-40" />
-                  <span className="text-xs font-medium opacity-60">No Cover</span>
-                </div>
-              )}
+            {/* Cover Poster with Shared PosterImage */}
+            <div className="w-48 sm:w-56 md:w-64 shrink-0 mx-auto md:mx-0 shadow-2xl">
+              <PosterImage
+                url={mediaItem.coverImage}
+                title={mediaItem.title}
+                mediaType={mediaItem.mediaType}
+                releaseYear={mediaItem.releaseYear}
+                className="shadow-2xl border-white/15"
+              />
             </div>
 
             {/* Meta Information */}
@@ -347,170 +368,151 @@ export default function MediaDetailPage({
             </div>
           </div>
         </div>
-      </div>
 
-      {/* ── Main Discovery & Community Content ── */}
-      <div className="max-w-7xl mx-auto px-6 py-10 w-full space-y-12">
-        {/* ── Shelf 1: Complete Franchise & Sequels ── */}
-        {collection && collection.parts && collection.parts.length > 0 && (
-          <section className="space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-              <div className="flex items-center gap-2.5">
-                <Layers className="w-5 h-5 text-violet-400" />
-                <h2 className="text-lg font-bold text-white tracking-tight">
-                  Complete Franchise &amp; Sequels
-                </h2>
-                <span className="text-xs text-zinc-400 bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full font-medium">
-                  {collection.name}
+        {/* ── Main Discovery & Community Content ── */}
+        <div className="max-w-[1400px] w-[calc(100%-48px)] mx-auto px-6 py-10 space-y-12">
+          {/* ── Shelf 1: Complete Franchise & Sequels ── */}
+          {collection && collection.parts && collection.parts.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-5 h-5 text-violet-400" />
+                  <h2 className="text-lg font-bold text-white tracking-tight">
+                    Complete Franchise &amp; Sequels
+                  </h2>
+                  <span className="text-xs text-zinc-400 bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full font-medium">
+                    {collection.name}
+                  </span>
+                </div>
+                <span className="text-xs text-zinc-500">
+                  {collection.parts.length} Chronological Entries
                 </span>
               </div>
-              <span className="text-xs text-zinc-500">
-                {collection.parts.length} Chronological Entries
-              </span>
-            </div>
 
-            {/* Horizontal Shelf */}
-            <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-              {collection.parts.map((part) => {
-                const isCurrent =
-                  String(part.id) === String(mediaItem.externalId);
-                const partPoster = sanitizeImageUrl(part.poster_path);
-                const partYear = part.release_date
-                  ? part.release_date.slice(0, 4)
-                  : "TBA";
-                const partVerdict = voteToVerdict(part.vote_average);
-                const cfg = VERDICT_CONFIG[partVerdict];
+              {/* Horizontal Shelf */}
+              <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+                {collection.parts.map((part) => {
+                  const isCurrent =
+                    String(part.id) === String(mediaItem.externalId);
+                  const partPoster = sanitizeImageUrl(part.poster_path);
+                  const partYear = part.release_date
+                    ? part.release_date.slice(0, 4)
+                    : "TBA";
+                  const partVerdict = voteToVerdict(part.vote_average);
+                  const cfg = VERDICT_CONFIG[partVerdict];
 
-                return (
-                  <Link
-                    key={part.id}
-                    href={`/media/external/MOVIE/${part.id}`}
-                    className={`w-36 sm:w-44 shrink-0 group ${
-                      isCurrent ? "pointer-events-none" : ""
-                    }`}
-                  >
-                    <div
-                      className={`aspect-[2/3] w-full rounded-xl overflow-hidden border relative bg-zinc-900 shadow-md ${
-                        isCurrent
-                          ? "border-violet-500 ring-2 ring-violet-500/30"
-                          : "border-white/10 group-hover:border-white/20"
+                  return (
+                    <Link
+                      key={part.id}
+                      href={`/media/external/MOVIE/${part.id}`}
+                      className={`w-36 sm:w-44 shrink-0 group ${
+                        isCurrent ? "pointer-events-none" : ""
                       }`}
                     >
-                      {partPoster ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={partPoster}
-                          alt={part.title || "Franchise Entry"}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-zinc-800 flex items-center justify-center p-2 text-center text-xs text-zinc-500">
+                      <PosterImage
+                        url={partPoster}
+                        title={part.title || "Franchise Entry"}
+                        mediaType="MOVIE"
+                        releaseYear={partYear}
+                        className={
+                          isCurrent
+                            ? "border-violet-500 ring-2 ring-violet-500/30"
+                            : "border-white/10 group-hover:border-white/20"
+                        }
+                      >
+                        {/* Current Item Indicator */}
+                        {isCurrent && (
+                          <div className="absolute top-2 left-2 bg-violet-600/95 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow z-10 pointer-events-none">
+                            CURRENT
+                          </div>
+                        )}
+
+                        {/* Overlaid Verdict Chip */}
+                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-white/10 flex items-center gap-1 shadow z-10 pointer-events-none">
+                          <span
+                            className={`text-[9px] font-semibold leading-none ${cfg.textClass}`}
+                          >
+                            {cfg.label}
+                          </span>
+                        </div>
+                      </PosterImage>
+
+                      <div className="mt-2 space-y-0.5">
+                        <p className="text-sm font-medium text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
                           {part.title}
-                        </div>
-                      )}
-
-                      {/* Current Item Indicator */}
-                      {isCurrent && (
-                        <div className="absolute top-2 left-2 bg-violet-600/95 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
-                          CURRENT
-                        </div>
-                      )}
-
-                      {/* Overlaid Verdict Chip */}
-                      <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-white/10 flex items-center gap-1 shadow">
-                        <span
-                          className={`text-[9px] font-semibold leading-none ${cfg.textClass}`}
-                        >
-                          {cfg.label}
-                        </span>
+                        </p>
+                        <p className="text-xs text-zinc-500">{partYear}</p>
                       </div>
-                    </div>
-
-                    <div className="mt-2 space-y-0.5">
-                      <p className="text-sm font-medium text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
-                        {part.title}
-                      </p>
-                      <p className="text-xs text-zinc-500">{partYear}</p>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* ── Shelf 2: "More Like This" Recommendations ── */}
-        {recommendations.length > 0 && (
-          <section className="space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-violet-400" />
-                <h2 className="text-lg font-bold text-white tracking-tight">
-                  More Like This
-                </h2>
+                    </Link>
+                  );
+                })}
               </div>
-              <span className="text-xs text-zinc-500">
-                Recommended for You
-              </span>
-            </div>
+            </section>
+          )}
 
-            {/* Horizontal Shelf */}
-            <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-              {recommendations.slice(0, 10).map((rec) => {
-                const recPoster = sanitizeImageUrl(rec.poster_path);
-                const recTitle = rec.title || rec.name || "Untitled";
-                const recYear =
-                  (rec.release_date || rec.first_air_date || "").slice(0, 4) ||
-                  "TBA";
-                const recVerdict = voteToVerdict(rec.vote_average);
-                const cfg = VERDICT_CONFIG[recVerdict];
-                const recType =
-                  rec.media_type === "tv" ? "SERIES" : "MOVIE";
+          {/* ── Shelf 2: "More Like This" Recommendations ── */}
+          {recommendations.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-violet-400" />
+                  <h2 className="text-lg font-bold text-white tracking-tight">
+                    More Like This
+                  </h2>
+                </div>
+                <span className="text-xs text-zinc-500">
+                  Recommended for You
+                </span>
+              </div>
 
-                return (
-                  <Link
-                    key={rec.id}
-                    href={`/media/external/${recType}/${rec.id}`}
-                    className="w-36 sm:w-44 shrink-0 group"
-                  >
-                    <div className="aspect-[2/3] w-full rounded-xl overflow-hidden border border-white/10 group-hover:border-white/20 relative bg-zinc-900 shadow-md">
-                      {recPoster ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={recPoster}
-                          alt={recTitle}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-zinc-800 flex items-center justify-center p-2 text-center text-xs text-zinc-500">
-                          {recTitle}
+              {/* Horizontal Shelf */}
+              <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+                {recommendations.slice(0, 10).map((rec) => {
+                  const recPoster = sanitizeImageUrl(rec.poster_path);
+                  const recTitle = rec.title || rec.name || "Untitled";
+                  const recYear =
+                    (rec.release_date || rec.first_air_date || "").slice(0, 4) ||
+                    "TBA";
+                  const recVerdict = voteToVerdict(rec.vote_average);
+                  const cfg = VERDICT_CONFIG[recVerdict];
+                  const recType =
+                    rec.media_type === "tv" ? "SERIES" : "MOVIE";
+
+                  return (
+                    <Link
+                      key={rec.id}
+                      href={`/media/external/${recType}/${rec.id}`}
+                      className="w-36 sm:w-44 shrink-0 group"
+                    >
+                      <PosterImage
+                        url={recPoster}
+                        title={recTitle}
+                        mediaType={recType}
+                        releaseYear={recYear}
+                        className="border-white/10 group-hover:border-white/20"
+                      >
+                        {/* Verdict Chip */}
+                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-white/10 flex items-center gap-1 shadow z-10 pointer-events-none">
+                          <span
+                            className={`text-[9px] font-semibold leading-none ${cfg.textClass}`}
+                          >
+                            {cfg.label}
+                          </span>
                         </div>
-                      )}
+                      </PosterImage>
 
-                      {/* Verdict Chip */}
-                      <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-white/10 flex items-center gap-1 shadow">
-                        <span
-                          className={`text-[9px] font-semibold leading-none ${cfg.textClass}`}
-                        >
-                          {cfg.label}
-                        </span>
+                      <div className="mt-2 space-y-0.5">
+                        <p className="text-sm font-medium text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
+                          {recTitle}
+                        </p>
+                        <p className="text-xs text-zinc-500">{recYear}</p>
                       </div>
-                    </div>
-
-                    <div className="mt-2 space-y-0.5">
-                      <p className="text-sm font-medium text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
-                        {recTitle}
-                      </p>
-                      <p className="text-xs text-zinc-500">{recYear}</p>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
         {/* ── Community Verdicts / Reviews Section ── */}
         <section className="space-y-6">
@@ -632,6 +634,7 @@ export default function MediaDetailPage({
           )}
         </section>
       </div>
+    </div>
 
       {/* Modals */}
       <TrailerModal

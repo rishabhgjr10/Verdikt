@@ -20,20 +20,24 @@ const TABS: { label: string; value: HomeCategory }[] = [
 
 export function CategoryTabs({ active, onChange }: CategoryTabsProps) {
   return (
-    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-4 pb-6">
-      {TABS.map((tab) => (
-        <button
-          key={tab.value}
-          onClick={() => onChange(tab.value)}
-          className={
-            active === tab.value
-              ? "whitespace-nowrap bg-zinc-800 text-white font-medium px-4 py-1.5 rounded-full text-xs border border-white/10 transition-all cursor-pointer shadow-sm"
-              : "whitespace-nowrap text-zinc-400 hover:text-white px-4 py-1.5 rounded-full text-xs transition-colors cursor-pointer"
-          }
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div className="flex items-center gap-2 mb-8 overflow-x-auto no-scrollbar py-1">
+      {TABS.map((tab) => {
+        const isActive = active === tab.value;
+        return (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => onChange(tab.value)}
+            className={`whitespace-nowrap px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer select-none ${
+              isActive
+                ? "bg-violet-600 text-white shadow-[0_0_15px_rgba(139,92,246,0.25)] font-semibold"
+                : "bg-transparent text-zinc-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -50,5 +50,21 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Lovable / TanStack export artifacts
+src/routes/
+src/router.tsx
+src/routeTree.gen.ts
+src/server.ts
+src/start.ts
+src/styles.css
+src/lib/error-capture.ts
+src/lib/error-page.ts
+src/lib/lovable-error-reporting.ts
+src/components/ui/*
+!src/components/ui/button.tsx
+src/hooks/
+
+
+
 .vercel
 .env*

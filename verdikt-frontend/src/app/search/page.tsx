@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from "react";
+import React, { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Navbar, NavMediaCategory } from "@/components/Navbar";
+import { NavMediaCategory } from "@/components/Navbar";
 import { MediaCard } from "@/components/MediaCard";
-import { MediaItem, MediaType } from "@/types/media";
+import { MediaItem } from "@/types/media";
 import { mediaApi } from "@/lib/api";
 import {
   fetchTrendingMovies,
@@ -15,25 +15,21 @@ import {
   deduplicateFranchises,
   deduplicateMedia,
 } from "@/lib/tmdb";
+import { rankAndFilterSearchResults } from "@/lib/catalog-navigation";
 import { Search, AlertCircle, Loader2, ChevronDown, Sparkles } from "lucide-react";
-
-const CATEGORY_TABS: { label: string; value: NavMediaCategory }[] = [
-  { label: "All", value: "ALL" },
-  { label: "Movies", value: "MOVIE" },
-  { label: "Series", value: "SERIES" },
-  { label: "Anime", value: "ANIME" },
-  { label: "Games", value: "GAME" },
-  { label: "Books", value: "BOOK" },
-];
 
 function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
   const query = searchParams.get("q") || "";
-  const initialCategory = (searchParams.get("type") || "ALL") as NavMediaCategory;
+  const urlType = searchParams.get("type") as NavMediaCategory | null;
 
-  const [selectedCategory, setSelectedCategory] = useState<NavMediaCategory>(initialCategory);
+  // For browse catalog mode
+  const browseCategory: NavMediaCategory = urlType || "ALL";
+
+  // For search results filtering
+  const [activeFilter, setActiveFilter] = useState<NavMediaCategory>(urlType || "ALL");
   const [items, setItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -41,13 +37,10 @@ function SearchContent() {
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync state if URL param changes
+  // Sync activeFilter when urlType changes
   useEffect(() => {
-    const urlType = searchParams.get("type") as NavMediaCategory;
-    if (urlType && urlType !== selectedCategory) {
-      setSelectedCategory(urlType);
-    }
-  }, [searchParams]);
+    setActiveFilter(urlType || "ALL");
+  }, [urlType]);
 
   const getItemKey = (item: MediaItem, index: number) =>
     item.id || (item.externalId ? `${item.mediaType}-${item.externalId}` : `item-${index}`);
@@ -57,9 +50,10 @@ function SearchContent() {
 
     // 1. If explicit search query is provided
     if (searchTerm) {
-      const typeParam = cat === "ALL" ? "ALL" : cat;
-      const results = await mediaApi.search(searchTerm, typeParam, pageToFetch);
-      return deduplicateMedia(results);
+      // In text search mode, fetch across ALL categories so client-side filter chips have full counts
+      const results = await mediaApi.search(searchTerm, "ALL", pageToFetch);
+      const deduped = deduplicateMedia(results);
+      return rankAndFilterSearchResults(deduped, searchTerm);
     }
 
     // 2. Browsing trending catalog when search input is blank
@@ -104,7 +98,7 @@ function SearchContent() {
       setHasMore(true);
 
       try {
-        const initialResults = await fetchItems(selectedCategory, 1);
+        const initialResults = await fetchItems(query.trim() ? "ALL" : browseCategory, 1);
         setItems(initialResults);
         if (initialResults.length === 0) {
           setHasMore(false);
@@ -118,19 +112,18 @@ function SearchContent() {
     }
 
     loadResults();
-  }, [query, selectedCategory]);
+  }, [query, browseCategory]);
 
-  const handleCategoryClick = (cat: NavMediaCategory) => {
-    setSelectedCategory(cat);
-    // Update URL query parameters smoothly without page reload
-    const newParams = new URLSearchParams(searchParams.toString());
-    if (cat === "ALL") {
+  const handleFilterChipClick = (type: NavMediaCategory) => {
+    setActiveFilter(type);
+    const newParams = new URLSearchParams(window.location.search);
+    if (type === "ALL") {
       newParams.delete("type");
     } else {
-      newParams.set("type", cat);
+      newParams.set("type", type);
     }
-    const targetUrl = newParams.toString() ? `/search?${newParams.toString()}` : "/search";
-    router.replace(targetUrl, { scroll: false });
+    const newUrl = newParams.toString() ? `/search?${newParams.toString()}` : "/search";
+    window.history.replaceState(null, "", newUrl);
   };
 
   const handleLoadMore = async () => {
@@ -139,7 +132,7 @@ function SearchContent() {
     const nextPage = page + 1;
 
     try {
-      const newItems = await fetchItems(selectedCategory, nextPage);
+      const newItems = await fetchItems(query.trim() ? "ALL" : browseCategory, nextPage);
       if (newItems.length === 0) {
         setHasMore(false);
       } else {
@@ -160,61 +153,110 @@ function SearchContent() {
     }
   };
 
-  return (
-    <div className="min-h-screen flex flex-col bg-[#09090b] text-zinc-100">
-      <Navbar
-        selectedCategory={selectedCategory}
-        onSelectCategory={handleCategoryClick}
-        initialQuery={query}
-      />
+  // Compute category counts for search mode
+  const { totalCount, filterChips, displayedItems } = useMemo(() => {
+    if (!query.trim()) {
+      return {
+        totalCount: items.length,
+        filterChips: [],
+        displayedItems: items,
+      };
+    }
 
-      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
-        {/* Header Summary */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/[0.06]">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              {query ? (
-                <>
-                  Search Results for <span className="text-violet-400">&ldquo;{query}&rdquo;</span>
-                </>
-              ) : (
-                "Browse Media Catalog"
-              )}
-            </h1>
-            <p className="text-xs text-zinc-500 mt-1">
-              {isLoading ? (
-                "Scanning catalog..."
-              ) : (
-                <span>
-                  {items.length} titles found across{" "}
-                  <span className="text-zinc-300 font-medium capitalize">
-                    {selectedCategory === "ALL" ? "All Categories" : selectedCategory.toLowerCase()}
-                  </span>
+    const total = items.length;
+    const movieCount = items.filter((i) => i.mediaType === "MOVIE").length;
+    const seriesCount = items.filter((i) => i.mediaType === "SERIES").length;
+    const animeCount = items.filter((i) => i.mediaType === "ANIME").length;
+    const gameCount = items.filter((i) => i.mediaType === "GAME").length;
+    const bookCount = items.filter((i) => i.mediaType === "BOOK").length;
+
+    const chips: { key: NavMediaCategory; label: string }[] = [
+      { key: "ALL", label: `All ${total}` },
+      ...(movieCount > 0 ? [{ key: "MOVIE" as NavMediaCategory, label: `Movies ${movieCount}` }] : []),
+      ...(seriesCount > 0 ? [{ key: "SERIES" as NavMediaCategory, label: `Series ${seriesCount}` }] : []),
+      ...(animeCount > 0 ? [{ key: "ANIME" as NavMediaCategory, label: `Anime ${animeCount}` }] : []),
+      ...(gameCount > 0 ? [{ key: "GAME" as NavMediaCategory, label: `Games ${gameCount}` }] : []),
+      ...(bookCount > 0 ? [{ key: "BOOK" as NavMediaCategory, label: `Books ${bookCount}` }] : []),
+    ];
+
+    const filtered =
+      activeFilter === "ALL"
+        ? items
+        : items.filter((i) => i.mediaType === activeFilter);
+
+    return {
+      totalCount: total,
+      filterChips: chips,
+      displayedItems: filtered,
+    };
+  }, [items, query, activeFilter]);
+
+  const getBrowseHeading = (type: string | null) => {
+    switch (type) {
+      case "MOVIE":
+        return "Movies";
+      case "SERIES":
+        return "Series";
+      case "ANIME":
+        return "Anime";
+      case "GAME":
+        return "Games";
+      case "BOOK":
+        return "Books";
+      default:
+        return "All Media";
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col text-zinc-100">
+      <main className="w-[calc(100%-48px)] max-w-[1400px] mx-auto px-6 pb-16 flex-1 space-y-6">
+        {/* FIX 4: Header & Filter Controls */}
+        {query ? (
+          /* Text search results: Heading with muted count beside it, plus slim filter chips row */
+          <div className="flex flex-col gap-3 pb-3 border-b border-white/[0.06]">
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                Search results for &ldquo;{query}&rdquo;
+              </h1>
+              {!isLoading && (
+                <span className="text-sm font-normal text-zinc-400">
+                  {totalCount} results
                 </span>
               )}
-            </p>
-          </div>
-        </div>
+            </div>
 
-        {/* Category Filter Pills Directly Underneath Header */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-          {CATEGORY_TABS.map((tab) => {
-            const isActive = selectedCategory === tab.value;
-            return (
-              <button
-                key={tab.value}
-                onClick={() => handleCategoryClick(tab.value)}
-                className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                  isActive
-                    ? "bg-zinc-800 text-white border border-white/10 shadow-sm"
-                    : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
+            {/* ONE slim row of filter chips with counts, hiding types with zero results */}
+            {!isLoading && filterChips.length > 0 && (
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-1">
+                {filterChips.map((chip) => {
+                  const isActive = activeFilter === chip.key;
+                  return (
+                    <button
+                      key={chip.key}
+                      type="button"
+                      onClick={() => handleFilterChipClick(chip.key)}
+                      className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                        isActive
+                          ? "bg-white/15 text-white"
+                          : "text-zinc-400 hover:text-white hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Browse catalog pages: Single heading ("Movies", "Series", etc.) with no subtext and no category row */
+          <div className="pb-4 border-b border-white/[0.06]">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              {getBrowseHeading(urlType)}
+            </h1>
+          </div>
+        )}
 
         {/* Error Alert */}
         {error && (
@@ -235,16 +277,16 @@ function SearchContent() {
               </div>
             ))}
           </div>
-        ) : items.length > 0 ? (
+        ) : displayedItems.length > 0 ? (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {items.map((item, index) => (
+              {displayedItems.map((item, index) => (
                 <MediaCard key={getItemKey(item, index)} item={item} />
               ))}
             </div>
 
-            {/* Load More Button */}
-            {hasMore && (
+            {/* Load More Button (only in browse mode) */}
+            {!query && hasMore && (
               <div className="mt-12 text-center">
                 <button
                   onClick={handleLoadMore}
@@ -271,7 +313,7 @@ function SearchContent() {
             <Search className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
             <h3 className="text-base font-bold text-white">No media items found</h3>
             <p className="mt-1 text-xs text-zinc-400">
-              Try searching with different keywords or choosing another category filter.
+              Try searching with different keywords or selecting another category filter.
             </p>
           </div>
         )}
@@ -284,7 +326,7 @@ export default function SearchPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#09090b] text-zinc-100 flex items-center justify-center">
+        <div className="min-h-screen text-zinc-100 flex items-center justify-center">
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <Sparkles className="w-4 h-4 text-violet-400 animate-spin" />
             <span>Loading search catalog...</span>
