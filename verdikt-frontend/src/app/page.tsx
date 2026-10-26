@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { NavMediaCategory } from "@/components/Navbar";
-import { StreamingHub } from "@/components/StreamingHub";
-import { Leaderboard } from "@/components/Leaderboard";
+import { MostInterestedCard } from "@/components/MostInterested";
 import { PosterImage } from "@/components/PosterImage";
 import { MediaItem, MediaType, Verdict } from "@/types/media";
 import { mediaApi } from "@/lib/api";
@@ -14,13 +13,20 @@ import {
   voteToVerdict,
   fetchTrendingMovies,
   fetchTrendingTv,
-  fetchTrendingAll,
   fetchTrendingAnime,
   tmdbToMediaItem,
   deduplicateFranchises,
   deduplicateMedia,
 } from "@/lib/tmdb";
-import { Film, Tv, Sparkles, Gamepad2, BookOpen } from "lucide-react";
+import { Check, ChevronDown, Film, Tv, Sparkles, Gamepad2, BookOpen } from "lucide-react";
+import {
+  PLATFORMS,
+  fetchBalancedFeed,
+  fetchBlendedCategory,
+  fetchEditorsPicks,
+  fetchPlatformShelf,
+  fetchWorthReadingBooks,
+} from "@/lib/discovery";
 
 // ── Verdict Configuration & Color Tokens ─────────────────────────────────────
 const VERDICT_CONFIG: Record<
@@ -212,21 +218,238 @@ function LandscapeSkeleton() {
   );
 }
 
-function LeaderboardSkeleton() {
+// ── Poster Shelf (Editor's Pick, Books, Platforms) ───────────────────────────
+function PosterShelf({
+  title,
+  items,
+  loading,
+  skeletonCount = 5,
+  action,
+  emptyText = "Nothing to show right now.",
+}: {
+  title: React.ReactNode;
+  items: FeedItem[];
+  loading: boolean;
+  skeletonCount?: number;
+  action?: React.ReactNode;
+  emptyText?: string;
+}) {
   return (
-    <div className="rounded-2xl bg-zinc-900/40 border border-white/[0.08] p-5 space-y-4">
-      <div className="h-4 w-1/2 rounded bg-zinc-800 animate-pulse" />
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3">
-          <div className="h-6 w-6 rounded bg-zinc-800 animate-pulse" />
-          <div className="aspect-[2/3] w-10 rounded-md bg-zinc-800 animate-pulse" />
-          <div className="flex-1 space-y-1.5">
-            <div className="h-3.5 w-3/4 rounded bg-zinc-800 animate-pulse" />
-            <div className="h-2.5 w-1/2 rounded bg-zinc-800/50 animate-pulse" />
-          </div>
+    <section>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h2 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2 min-w-0">
+          {title}
+        </h2>
+        {action}
+      </div>
+      {loading ? (
+        <div className="catalog-poster-grid">
+          {Array.from({ length: skeletonCount }).map((_, i) => (
+            <PosterSkeleton key={i} />
+          ))}
         </div>
-      ))}
+      ) : items.length > 0 ? (
+        <div className="catalog-poster-grid">
+          {items.map((item) => (
+            <PosterCard key={item.id || `${item.mediaType}-${item.externalId}`} item={item} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12 rounded-2xl border border-white/5 bg-zinc-900/20">
+          <p className="text-sm text-zinc-400">{emptyText}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ── Platform brand icons (inline SVG, always render) ─────────────────────────
+const PLATFORM_TILE: Record<number, string> = {
+  8: "#E50914",
+  122: "linear-gradient(135deg, #0f1026, #2563eb, #db2777)",
+  119: "#00A8E1",
+  283: "#F47521",
+  237: "linear-gradient(135deg, #3b0764, #4f46e5)",
+  350: "#18181b",
+};
+
+function PlatformGlyph({ id }: { id: number }) {
+  switch (id) {
+    case 8: // Netflix "N"
+      return (
+        <svg viewBox="0 0 24 24" className="w-[62%] h-[62%]" aria-hidden="true">
+          <path d="M6 3h4l4 10V3h4v18h-4L10 11v10H6z" fill="#fff" />
+        </svg>
+      );
+    case 122: // JioHotstar spark
+      return (
+        <svg viewBox="0 0 24 24" className="w-[66%] h-[66%]" aria-hidden="true">
+          <path d="M12 2l2.6 6.4L21 11l-6.4 2.6L12 20l-2.6-6.4L3 11l6.4-2.6z" fill="#fff" />
+        </svg>
+      );
+    case 119: // Prime smile arrow
+      return (
+        <svg viewBox="0 0 24 24" className="w-[70%] h-[70%]" aria-hidden="true">
+          <text x="12" y="13" textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff" fontFamily="Arial, sans-serif">prime</text>
+          <path d="M5 16c4 3 10 3 14 0" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+          <path d="M17 14.6l2.2 1.5-2.4 1.1" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case 283: // Crunchyroll swirl
+      return (
+        <svg viewBox="0 0 24 24" className="w-[72%] h-[72%]" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5" fill="none" stroke="#fff" strokeWidth="2.4" strokeDasharray="42 12" strokeLinecap="round" />
+          <circle cx="13.5" cy="12" r="3.6" fill="#fff" />
+        </svg>
+      );
+    case 237: // Sony LIV
+      return (
+        <svg viewBox="0 0 24 24" className="w-[74%] h-[74%]" aria-hidden="true">
+          <text x="12" y="15.5" textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff" fontFamily="Arial, sans-serif">LIV</text>
+          <circle cx="12" cy="6" r="1.6" fill="#a5b4fc" />
+        </svg>
+      );
+    default: // Apple TV+
+      return (
+        <svg viewBox="0 0 24 24" className="w-[72%] h-[72%]" aria-hidden="true">
+          <path
+            d="M9.2 8.2c.6-.7 1-1.6.9-2.5-.9 0-1.9.6-2.5 1.3-.5.6-1 1.5-.8 2.4.9.1 1.8-.5 2.4-1.2zm.4 1.2c-1.3-.1-2.4.7-3 .7-.6 0-1.6-.7-2.6-.7C2.7 9.4 1.5 10.2.9 11.4c-1.300 2.300-.3 5.700.9 7.500.6.900 1.300 1.900 2.300 1.900.9 0 1.300-.6 2.400-.6s1.400.6 2.400.6 1.600-.9 2.200-1.800c.7-1 1-2 1-2.100-.1 0-1.900-.7-1.900-2.800 0-1.700 1.400-2.500 1.500-2.600-.8-1.200-2.100-1.300-2.500-1.300z"
+            fill="#fff"
+            transform="translate(0.5 -2.5) scale(0.62)"
+          />
+          <text x="16.2" y="14.2" textAnchor="middle" fontSize="6.2" fontWeight="700" fill="#fff" fontFamily="Arial, sans-serif">tv</text>
+        </svg>
+      );
+  }
+}
+
+function PlatformIcon({ id, className }: { id: number; className: string }) {
+  return (
+    <span
+      className={`${className} inline-flex items-center justify-center shrink-0 overflow-hidden border border-white/10`}
+      style={{ background: PLATFORM_TILE[id] ?? "#18181b" }}
+      aria-hidden="true"
+    >
+      <PlatformGlyph id={id} />
+    </span>
+  );
+}
+
+// ── iOS liquid-glass platform picker ─────────────────────────────────────────
+function PlatformPicker({
+  platformId,
+  onChange,
+}: {
+  platformId: number;
+  onChange: (id: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const active = PLATFORMS.find((p) => p.id === platformId) ?? PLATFORMS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Streaming platform"
+        onClick={() => setOpen((o) => !o)}
+        className="bg-white/[0.06] hover:bg-white/[0.10] backdrop-blur-xl saturate-150 border border-white/[0.14] shadow-[inset_0_1px_1px_rgba(255,255,255,0.22),0_8px_20px_rgba(0,0,0,0.4)] rounded-full px-3.5 py-2 text-xs font-medium text-white flex items-center gap-2.5 transition-all cursor-pointer"
+      >
+        <PlatformIcon id={active.id} className="w-4 h-4 rounded" />
+        <span>{active.name}</span>
+        <ChevronDown
+          className={`w-3.5 h-3.5 text-zinc-300 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute right-0 mt-2 w-56 z-50 bg-zinc-900/75 backdrop-blur-2xl saturate-150 border border-white/[0.14] shadow-[inset_0_1px_1px_rgba(255,255,255,0.25),0_24px_48px_rgba(0,0,0,0.75)] rounded-2xl p-1.5"
+        >
+          {PLATFORMS.map((p) => {
+            const selected = p.id === platformId;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(p.id);
+                  setOpen(false);
+                }}
+                className={`w-full hover:bg-white/[0.08] active:scale-[0.99] rounded-xl px-3 py-2 text-xs font-medium transition-all flex items-center justify-between cursor-pointer ${
+                  selected ? "bg-white/[0.10] text-white" : "text-zinc-300"
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <PlatformIcon id={p.id} className="w-4 h-4 rounded" />
+                  {p.name}
+                </span>
+                {selected && <Check className="w-3.5 h-3.5 text-violet-300" aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Streaming platform shelf: one section, platform picked from a dropdown ───
+function PlatformShelf() {
+  const [platformId, setPlatformId] = useState(PLATFORMS[0].id);
+  // Results cached per platform so switching back is instant
+  const [cache, setCache] = useState<Record<number, FeedItem[]>>({});
+  const platform = PLATFORMS.find((p) => p.id === platformId) ?? PLATFORMS[0];
+  const items = cache[platformId];
+
+  useEffect(() => {
+    if (cache[platformId]) return;
+    let cancelled = false;
+    fetchPlatformShelf(platformId)
+      .catch(() => [] as FeedItem[])
+      .then((result) => {
+        if (!cancelled) setCache((c) => ({ ...c, [platformId]: result }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [platformId, cache]);
+
+  return (
+    <PosterShelf
+      title={
+        <>
+          <PlatformIcon id={platform.id} className="w-7 h-7 rounded-lg" />
+          <span>{platform.heading}</span>
+        </>
+      }
+      items={items ?? []}
+      loading={!items}
+      skeletonCount={10}
+      emptyText={`No titles found on ${platform.name} right now.`}
+      action={<PlatformPicker platformId={platformId} onChange={setPlatformId} />}
+    />
   );
 }
 
@@ -239,12 +462,10 @@ export default function HomePage() {
   // Data states
   const [posterItems, setPosterItems] = useState<FeedItem[]>([]);
   const [landscapeItems, setLandscapeItems] = useState<FeedItem[]>([]);
-  const [leaderboardItems, setLeaderboardItems] = useState<FeedItem[]>([]);
 
   // Loading states
   const [postersLoading, setPostersLoading] = useState(true);
   const [landscapeLoading, setLandscapeLoading] = useState(true);
-  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
 
   // ── Smart Feed Deduplication & Franchise Grouping ──────────────────────────
   const fetchPosters = useCallback(async (cat: NavMediaCategory) => {
@@ -253,27 +474,14 @@ export default function HomePage() {
       let items: FeedItem[] = [];
 
       if (cat === "ALL") {
-        const trendingAll = await fetchTrendingAll();
-        items = trendingAll.map((item) => tmdbToMediaItem(item));
-
-        if (items.length < 15) {
-          const [movies, tvShows] = await Promise.all([
-            fetchTrendingMovies(),
-            fetchTrendingTv(),
-          ]);
-          const combined = [
-            ...items,
-            ...movies.map((m) => tmdbToMediaItem(m, "MOVIE")),
-            ...tvShows.map((t) => tmdbToMediaItem(t, "SERIES")),
-          ];
-          items = combined;
-        }
-      } else if (cat === "MOVIE") {
-        const movies = await fetchTrendingMovies();
-        items = movies.map((m) => tmdbToMediaItem(m, "MOVIE"));
-      } else if (cat === "SERIES") {
-        const tv = await fetchTrendingTv();
-        items = tv.map((t) => tmdbToMediaItem(t, "SERIES"));
+        // Balanced mix (Indian + global movies/series, anime, books, a game), already
+        // de-duplicated and interleaved; franchise grouping would drop e.g. a Dune book next to the film.
+        const feed = await fetchBalancedFeed();
+        setPosterItems(feed.slice(0, 10));
+        return;
+      } else if (cat === "MOVIE" || cat === "SERIES") {
+        // Half Indian (origin IN), half global trending
+        items = await fetchBlendedCategory(cat);
       } else if (cat === "ANIME") {
         const anime = await fetchTrendingAnime();
         items = anime.map((a) => tmdbToMediaItem(a, "ANIME"));
@@ -287,7 +495,7 @@ export default function HomePage() {
       }
 
       const deduplicated = deduplicateFranchises(items);
-      setPosterItems(deduplicated.slice(0, 15));
+      setPosterItems(deduplicated.slice(0, 10));
     } catch (err) {
       console.error("Failed to fetch posters", err);
       setPosterItems([]);
@@ -322,25 +530,21 @@ export default function HomePage() {
     }
   }, []);
 
-  // ── Fetch Sidebar Leaderboard ("Most Interested") ───────────────────────────
-  const fetchLeaderboard = useCallback(async () => {
-    setLeaderboardLoading(true);
-    try {
-      const trendingAll = await fetchTrendingAll();
-      const mapped = trendingAll.map((item) => tmdbToMediaItem(item));
-      const uniqueLeaderboard = deduplicateMedia(mapped);
+  // ── Curated weekly shelves ──────────────────────────────────────────────────
+  const [editorsPicks, setEditorsPicks] = useState<FeedItem[] | null>(null);
+  const [worthReading, setWorthReading] = useState<FeedItem[] | null>(null);
 
-      uniqueLeaderboard.sort(
-        (a, b) => (b.voteAverage || 0) - (a.voteAverage || 0)
-      );
-
-      setLeaderboardItems(uniqueLeaderboard.slice(0, 5));
-    } catch (err) {
-      console.error("Failed to fetch leaderboard", err);
-      setLeaderboardItems([]);
-    } finally {
-      setLeaderboardLoading(false);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    fetchEditorsPicks()
+      .catch(() => [] as FeedItem[])
+      .then((items) => !cancelled && setEditorsPicks(items));
+    fetchWorthReadingBooks()
+      .catch(() => [] as FeedItem[])
+      .then((items) => !cancelled && setWorthReading(items));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ── Effects ─────────────────────────────────────────────────────────────────
@@ -350,8 +554,7 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchLandscape();
-    fetchLeaderboard();
-  }, [fetchLandscape, fetchLeaderboard]);
+  }, [fetchLandscape]);
 
   const activeCategoryLabel =
     category === "ALL"
@@ -385,9 +588,6 @@ export default function HomePage() {
                     {activeCategoryLabel}
                   </span>
                 </div>
-                <span className="text-xs text-zinc-500 font-medium">
-                  {postersLoading ? "Updating..." : `${posterItems.length} Titles`}
-                </span>
               </div>
 
               {/* 5-Column Poster Grid */}
@@ -414,6 +614,31 @@ export default function HomePage() {
                 </div>
               )}
             </section>
+
+            {/* ── Editor's Pick Of The Week (rotates weekly) ── */}
+            <PosterShelf
+              title={
+                <>
+                  <span className="text-xl">🤍</span> Editor&apos;s Pick Of The Week
+                </>
+              }
+              items={editorsPicks ?? []}
+              loading={editorsPicks === null}
+            />
+
+            {/* ── Worth Your Time To Read (books across decades, rotates weekly) ── */}
+            <PosterShelf
+              title={
+                <>
+                  <span className="text-xl">📚</span> Worth Your Time To Read
+                </>
+              }
+              items={worthReading ?? []}
+              loading={worthReading === null}
+            />
+
+            {/* ── Streaming platforms (single shelf + dropdown) ── */}
+            <PlatformShelf />
 
             {/* ── Section B: "📺 Watch Now" (Landscape Banner Shelf) ── */}
             <section>
@@ -445,15 +670,8 @@ export default function HomePage() {
           {/* ═══════════ RIGHT COLUMN (Sidebar: Fixed 354px) ═══════════ */}
           <aside className="catalog-sidebar">
             <div className="catalog-sidebar-stack lg:sticky lg:top-[7rem]">
-              {/* Streaming Radar */}
-              <StreamingHub />
-
               {/* Most Interested */}
-              {leaderboardLoading ? (
-                <LeaderboardSkeleton />
-              ) : (
-                <Leaderboard items={leaderboardItems} />
-              )}
+              <MostInterestedCard />
             </div>
           </aside>
         </div>

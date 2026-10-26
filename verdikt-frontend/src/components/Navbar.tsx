@@ -21,6 +21,7 @@ import { categories, rankAndFilterSearchResults, type MediaType } from "@/lib/ca
 import { mediaApi } from "@/lib/api";
 import { MediaItem } from "@/types/media";
 import { PosterImage } from "@/components/PosterImage";
+import { ProfileDropdown } from "@/components/ProfileDropdown";
 
 export type NavMediaCategory = "ALL" | MediaType;
 
@@ -91,6 +92,118 @@ function clearAllRecentSearches(): void {
   }
 }
 
+/**
+ * Sliding-pill helper: measures a row of items so a pill can glide to the hovered/active one.
+ * Attach `track` to the row container (must be positioned), `item(i)` to each item, and
+ * render <GlidePill> children before the items.
+ */
+export function useGlider<T extends HTMLElement>() {
+  const track = useRef<T>(null);
+  const items = useRef<(HTMLElement | null)[]>([]);
+  const [rects, setRects] = useState<({ x: number; y: number; w: number; h: number } | undefined)[]>([]);
+  const [ready, setReady] = useState(false);
+  const [hover, setHover] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = track.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => measure());
+    const measure = () => {
+      setRects(Array.from(items.current, (n) => (n ? { x: n.offsetLeft, y: n.offsetTop, w: n.offsetWidth, h: n.offsetHeight } : undefined)));
+      // Items resizing on their own (e.g. a label expanding) must re-measure too
+      items.current.forEach((n) => n && ro.observe(n));
+      // Skip the transition on first paint so pills don't slide in from x=0
+      requestAnimationFrame(() => setReady(true));
+    };
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const item = (i: number) => (n: HTMLElement | null) => {
+    items.current[i] = n;
+  };
+  return { track, item, rects, ready, hover, setHover };
+}
+
+export function GlidePill({
+  glide,
+  index,
+  className,
+  box = false,
+}: {
+  glide: { rects: ({ x: number; y: number; w: number; h: number } | undefined)[]; ready: boolean };
+  index: number | null;
+  className: string;
+  /** Also track the item's vertical position and height (vertical or wrapping lists). */
+  box?: boolean;
+}) {
+  const rect = index === null ? undefined : glide.rects[index];
+  return (
+    <span
+      aria-hidden="true"
+      className={`glide-pill pointer-events-none absolute left-0 ${box ? "top-0" : ""} rounded-full ${className}`}
+      style={{
+        width: rect?.w ?? 0,
+        ...(box && { height: rect?.h ?? 0 }),
+        transform: `translate(${rect?.x ?? 0}px, ${box ? (rect?.y ?? 0) : 0}px)`,
+        opacity: rect ? 1 : 0,
+        // Transitions live in navbar.css (.glide-pill); none on first paint so pills do not slide in from x=0
+        ...(!glide.ready && { transition: "none" }),
+      }}
+    />
+  );
+}
+
+/**
+ * Where item `index` sits once every label has finished expanding/collapsing. The active pill
+ * animates straight there on the same duration and curve as the labels, so pill and buttons
+ * move in lockstep instead of the pill chasing a layout that is still changing.
+ */
+function settledRect(track: HTMLElement, index: number) {
+  const gap = parseFloat(getComputedStyle(track).columnGap) || 0;
+  let x = 0;
+  for (const el of track.querySelectorAll<HTMLElement>("[data-nav-index]")) {
+    if (!el.offsetParent) continue; // hidden at this breakpoint
+    const icon = el.querySelector<HTMLElement>(".nav-icon")?.offsetWidth ?? 0;
+    const isTarget = Number(el.dataset.navIndex) === index;
+    const w = icon + (isTarget ? (el.querySelector<HTMLElement>(".nav-label-text")?.offsetWidth ?? 0) : 0);
+    if (isTarget) return { x, y: 0, w, h: 0 };
+    x += w + gap;
+  }
+  return undefined;
+}
+
+const navItemClass = (active: boolean) =>
+  `nav-item relative z-10 inline-flex h-9 items-center overflow-hidden rounded-full text-sm select-none cursor-pointer transition-colors duration-200 ${
+    active ? "text-white font-semibold" : "text-zinc-400 hover:text-white font-medium"
+  }`;
+
+function NavItemBody({
+  icon: Icon,
+  label,
+  active,
+  dot,
+}: {
+  icon: React.ElementType;
+  label: string;
+  active: boolean;
+  dot?: boolean;
+}) {
+  return (
+    <>
+      <span data-active={active} className="nav-icon relative flex h-9 w-9 shrink-0 items-center justify-center">
+        <Icon className="h-[18px] w-[18px]" />
+        {dot && <span className="shared-notification-dot" />}
+      </span>
+      <span data-active={active} className="nav-label">
+        <span>
+          <span className="nav-label-text inline-block pr-3.5">{label}</span>
+        </span>
+      </span>
+    </>
+  );
+}
+
 export function Navbar({
   selectedCategory,
   onSelectCategory,
@@ -99,7 +212,8 @@ export function Navbar({
 }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const authState: "loading" | "in" | "out" = isAuthLoading ? "loading" : user ? "in" : "out";
   const [, startTransition] = useTransition();
 
   const [panel, setPanel] = useState<"account" | "notifications" | "search" | null>(null);
@@ -107,6 +221,7 @@ export function Navbar({
   const [urlType, setUrlType] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const searchTrigger = useRef<HTMLButtonElement>(null);
+  const avatarTrigger = useRef<HTMLButtonElement>(null);
 
   // Search Modal state
   const [isSearchVisible, setIsSearchVisible] = useState(false);
@@ -130,6 +245,8 @@ export function Navbar({
   }, [pathname]);
 
   const { activeCategory } = useNav();
+  const { track: catTrack, item: catItem, ...catGlide } = useGlider<HTMLElement>();
+  const { track: utilTrack, item: utilItem, ...utilGlide } = useGlider<HTMLDivElement>();
 
   // Compute active category (FIX 2: "/" never highlights any category)
   let currentCat: MediaType | null = null;
@@ -137,7 +254,7 @@ export function Navbar({
     currentCat = selectedCategory;
   } else if (initialType && initialType !== "ALL") {
     currentCat = initialType as MediaType;
-  } else if (pathname === "/") {
+  } else if (pathname === "/" || pathname.startsWith("/schedule")) {
     currentCat = null;
   } else if (pathname === "/search") {
     currentCat = urlType && urlType !== "ALL" ? (urlType as MediaType) : null;
@@ -155,6 +272,29 @@ export function Navbar({
   } else if (urlType && urlType !== "ALL") {
     currentCat = urlType as MediaType;
   }
+
+  // Right-cluster item that is open or matches the route: 0 Explore, 1 Schedule, 2 Library, 3 Alerts, 4 Search
+  const activeNavIndex =
+    panel === "notifications" ? 3
+    : panel === "search" ? 4
+    : pathname === "/" ? 0
+    : pathname.startsWith("/schedule") ? 1
+    : pathname.startsWith("/library") ? 2
+    : pathname.startsWith("/search") ? 4
+    : null;
+  const activeCatIndex = categories.findIndex((c) => c.type === currentCat);
+
+  const [activeNavRect, setActiveNavRect] = useState<ReturnType<typeof settledRect>>();
+  useEffect(() => {
+    const el = utilTrack.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const next = activeNavIndex === null ? undefined : settledRect(el, activeNavIndex);
+      setActiveNavRect((prev) => (prev?.x === next?.x && prev?.w === next?.w ? prev : next));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeNavIndex, authState, utilTrack]);
 
   // Close panels on route change
   useEffect(() => {
@@ -376,11 +516,28 @@ export function Navbar({
         </Link>
 
         {/* FIX 2: Categories without Home pill */}
-        <nav className="shared-categories" aria-label="Categories">
-          {categories.map((category) => (
+        <nav
+          ref={catTrack}
+          className="shared-categories"
+          aria-label="Categories"
+          onMouseLeave={() => catGlide.setHover(null)}
+        >
+          <GlidePill
+            glide={catGlide}
+            index={catGlide.hover}
+            className="inset-y-0.5 bg-white/[0.08] backdrop-blur-md"
+          />
+          <GlidePill
+            glide={catGlide}
+            index={activeCatIndex >= 0 ? activeCatIndex : null}
+            className="inset-y-0.5 bg-violet-500/20 border border-violet-400/30 shadow-[0_0_14px_rgba(139,92,246,0.25)]"
+          />
+          {categories.map((category, i) => (
             <Link
               key={category.type}
+              ref={catItem(i)}
               href={`/search?type=${category.type}`}
+              onMouseEnter={() => catGlide.setHover(i)}
               className="shared-category cursor-pointer outline-none focus:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
               aria-current={currentCat === category.type ? "page" : undefined}
             >
@@ -391,121 +548,170 @@ export function Navbar({
 
         {/* Utility Actions */}
         <div className="shared-utilities">
-          <Button asChild variant="ghost" className="shared-explore">
-            <Link href="/search" title="Explore">
-              <Compass />
-              <span>Explore</span>
-            </Link>
-          </Button>
-
-          <Button asChild variant="ghost" size="icon" className="shared-icon shared-desktop">
-            <Link href="/search?type=MOVIE" aria-label="Release Schedule" title="Release Schedule">
-              <Calendar />
-            </Link>
-          </Button>
-
-          <Button asChild variant="ghost" size="icon" className="shared-icon shared-desktop">
+          <div
+            ref={utilTrack}
+            className="relative flex items-center gap-1.5"
+            onMouseLeave={() => utilGlide.setHover(null)}
+          >
+            <GlidePill
+              glide={utilGlide}
+              index={utilGlide.hover}
+              className="inset-y-0 bg-white/[0.08] border border-white/[0.12]"
+            />
+            <GlidePill
+              glide={{ rects: [activeNavRect], ready: utilGlide.ready }}
+              index={activeNavRect ? 0 : null}
+              className="glide-sync inset-y-0 bg-gradient-to-r from-violet-600/90 to-purple-600/90 border border-purple-400/40 shadow-[0_0_20px_rgba(139,92,246,0.4)]"
+            />
             <Link
-              href={user ? "/profile" : "/login"}
-              aria-label="Watchlist"
-              title="Watchlist"
+              ref={utilItem(0)}
+              data-nav-index={0}
+              href="/"
+              title="Explore"
+              aria-label="Explore"
+              aria-current={activeNavIndex === 0 ? "page" : undefined}
+              onMouseEnter={() => utilGlide.setHover(0)}
+              className={`${navItemClass(activeNavIndex === 0)} shared-desktop`}
             >
-              <Bookmark />
+              <NavItemBody icon={Compass} label="Explore" active={activeNavIndex === 0} />
             </Link>
-          </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shared-icon cursor-pointer"
-            aria-label="Notifications"
-            title="Notifications"
-            aria-expanded={panel === "notifications"}
-            onClick={() => setPanel(panel === "notifications" ? null : "notifications")}
-          >
-            <Bell />
-            <span className="shared-notification-dot" />
-          </Button>
+            <Link
+              ref={utilItem(1)}
+              data-nav-index={1}
+              href="/schedule"
+              title="Schedule"
+              aria-label="Schedule"
+              aria-current={activeNavIndex === 1 ? "page" : undefined}
+              onMouseEnter={() => utilGlide.setHover(1)}
+              className={`${navItemClass(activeNavIndex === 1)} shared-desktop`}
+            >
+              <NavItemBody icon={Calendar} label="Schedule" active={activeNavIndex === 1} />
+            </Link>
 
-          <Button
-            ref={searchTrigger}
-            variant="ghost"
-            size="icon"
-            className="shared-icon cursor-pointer"
-            aria-label="Search"
-            title="Search (⌘K)"
-            aria-expanded={panel === "search"}
-            onClick={() => {
-              if (panel === "search") {
-                closeSearchModal();
-              } else {
-                openSearchModal();
-              }
-            }}
-          >
-            <Search />
-          </Button>
-
-          <span className="shared-divider" />
-
-          {/* User Avatar */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shared-avatar cursor-pointer"
-            aria-label="User account menu"
-            title="Account"
-            aria-expanded={panel === "account"}
-            onClick={() => setPanel(panel === "account" ? null : "account")}
-          >
-            {user?.avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={user.avatarUrl}
-                alt={user.username || "User"}
-                className="w-full h-full rounded-full object-cover"
-              />
-            ) : (
-              <UserIcon />
-            )}
-          </Button>
-        </div>
-
-        {/* Account Menu Popover */}
-        {panel === "account" && (
-          <div className="shared-menu" role="menu">
-            {user ? (
+            {authState === "in" && (
               <>
-                <div className="px-2.5 py-1.5 text-xs text-zinc-400 border-b border-white/10 mb-1">
-                  Signed in as <span className="font-semibold text-white">{user.username || user.email}</span>
-                </div>
-                <Link href="/profile" onClick={() => setPanel(null)}>
-                  Profile &amp; Watchlist
+                <Link
+                  ref={utilItem(2)}
+                  data-nav-index={2}
+                  href="/library"
+                  title="Library"
+                  aria-label="Library"
+                  aria-current={activeNavIndex === 2 ? "page" : undefined}
+                  onMouseEnter={() => utilGlide.setHover(2)}
+                  className={`${navItemClass(activeNavIndex === 2)} shared-desktop shared-auth-fade`}
+                >
+                  <NavItemBody icon={Bookmark} label="Library" active={activeNavIndex === 2} />
                 </Link>
+
                 <button
                   type="button"
-                  className="w-full text-left px-2.5 py-2 text-xs rounded hover:bg-white/10 text-red-400 flex items-center gap-2 cursor-pointer mt-1"
-                  onClick={() => {
-                    logout();
-                    setPanel(null);
-                  }}
+                  ref={utilItem(3)}
+                  data-nav-index={3}
+                  onMouseEnter={() => utilGlide.setHover(3)}
+                  className={`${navItemClass(activeNavIndex === 3)} shared-auth-fade`}
+                  aria-label="Notifications"
+                  title="Notifications"
+                  aria-expanded={panel === "notifications"}
+                  onClick={() => setPanel(panel === "notifications" ? null : "notifications")}
                 >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Sign Out</span>
+                  <NavItemBody icon={Bell} label="Alerts" active={activeNavIndex === 3} dot />
                 </button>
               </>
-            ) : (
-              <>
-                <Link href="/login" onClick={() => setPanel(null)}>
-                  Sign In
-                </Link>
-                <Link href="/register" onClick={() => setPanel(null)}>
-                  Create Account
-                </Link>
-              </>
             )}
+
+            <button
+              type="button"
+              ref={(n) => {
+                searchTrigger.current = n;
+                utilItem(4)(n);
+              }}
+              data-nav-index={4}
+              onMouseEnter={() => utilGlide.setHover(4)}
+              className={navItemClass(activeNavIndex === 4)}
+              aria-label="Search"
+              title="Search (⌘K)"
+              aria-expanded={panel === "search"}
+              onClick={() => {
+                if (panel === "search") {
+                  closeSearchModal();
+                } else {
+                  openSearchModal();
+                }
+              }}
+            >
+              <NavItemBody icon={Search} label="Search" active={activeNavIndex === 4} />
+            </button>
           </div>
-        )}
+
+          {authState === "in" ? (
+            <>
+              <span className="shared-divider shared-auth-fade" />
+
+              {/* User Avatar */}
+              <Button
+                ref={avatarTrigger}
+                variant="ghost"
+                size="icon"
+                className={`shared-avatar shared-auth-fade cursor-pointer active:scale-95 transition-all duration-150 ${
+                  panel === "account"
+                    ? "ring-2 ring-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.85)] brightness-110"
+                    : ""
+                }`}
+                aria-label="User account menu"
+                title="Account"
+                aria-haspopup="menu"
+                aria-expanded={panel === "account"}
+                onClick={() => setPanel(panel === "account" ? null : "account")}
+              >
+                {user?.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.username || "User"}
+                    className="w-full h-full rounded-full object-cover"
+                  />
+                ) : (
+                  <UserIcon />
+                )}
+              </Button>
+            </>
+          ) : (
+            // While auth resolves, the logged-out buttons render invisibly so they
+            // reserve their exact width; nothing flashes and the capsule never shifts.
+            <div
+              className={`shared-auth-actions ${authState === "loading" ? "invisible" : "shared-auth-fade"}`}
+              aria-hidden={authState === "loading" ? true : undefined}
+              inert={authState === "loading" ? true : undefined}
+            >
+              <Link
+                href="/login"
+                className="shared-auth-btn shared-signin inline-flex items-center h-10 px-4 rounded-full bg-white/10 hover:bg-white/15 text-white border border-white/15 text-[13px] font-medium whitespace-nowrap transition-colors duration-150"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/register"
+                className="shared-auth-btn shared-signup inline-flex items-center h-10 px-4 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-[13px] font-semibold whitespace-nowrap shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_0_18px_rgba(139,92,246,0.4)] transition-colors duration-150"
+              >
+                Sign up
+              </Link>
+              <Link
+                href="/login"
+                className="shared-auth-btn shared-signin-compact relative items-center h-9 px-3 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-semibold whitespace-nowrap shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_0_14px_rgba(139,92,246,0.35)]"
+              >
+                Sign in
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* Account Menu Portal */}
+        <ProfileDropdown
+          isOpen={panel === "account"}
+          onClose={() => setPanel(null)}
+          anchorRef={avatarTrigger}
+        />
 
         {/* Notifications Popover */}
         {panel === "notifications" && (
@@ -516,7 +722,7 @@ export function Navbar({
       </header>
 
       {/* Dismiss backdrop for menus */}
-      {panel && panel !== "search" && (
+      {panel === "notifications" && (
         <div className="shared-dismiss" onClick={() => setPanel(null)} />
       )}
 

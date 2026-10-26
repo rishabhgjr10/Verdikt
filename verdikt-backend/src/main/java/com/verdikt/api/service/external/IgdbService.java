@@ -163,10 +163,12 @@ public class IgdbService {
         String title = node.path("name").asText("");
         String summary = node.path("summary").asText(null);
 
+        java.time.LocalDate releaseDate = null;
         Integer releaseYear = null;
         if (node.has("first_release_date")) {
             long unixSeconds = node.get("first_release_date").asLong();
             releaseYear = Instant.ofEpochSecond(unixSeconds).atZone(java.time.ZoneId.of("UTC")).getYear();
+            releaseDate = Instant.ofEpochSecond(unixSeconds).atZone(java.time.ZoneId.of("UTC")).toLocalDate();
         }
 
         String coverUrl = null;
@@ -217,6 +219,7 @@ public class IgdbService {
                 .mediaType(MediaType.GAME)
                 .title(title)
                 .releaseYear(releaseYear)
+                .releaseDate(releaseDate)
                 .coverImage(coverUrl)
                 .backdropImage(backdropUrl)
                 .description(summary)

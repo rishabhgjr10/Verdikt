@@ -1,10 +1,19 @@
 import axios from "axios";
 import {
   AuthResponse,
+  CollectionDetail,
+  CollectionSummary,
   CreateReviewPayload,
+  ExternalReview,
+  InterestPeriod,
   MediaItem,
+  MediaItemExtras,
   MediaType,
+  MediaUserState,
+  MostInterestedItem,
+  RatingSource,
   ReviewWithRelations,
+  WatchedResult,
 } from "@/types/media";
 
 const API_BASE_URL =
@@ -93,5 +102,78 @@ export const reviewApi = {
   getByUserId: async (userId: string): Promise<ReviewWithRelations[]> => {
     const response = await api.get<ReviewWithRelations[]>(`/reviews/user/${userId}`);
     return response.data;
+  },
+};
+
+export const userMediaApi = {
+  getState: async (mediaId: string): Promise<MediaUserState> => {
+    const response = await api.get<MediaUserState>(`/media/${mediaId}/me`);
+    return response.data;
+  },
+  setWatched: async (mediaId: string, value: boolean): Promise<WatchedResult> => {
+    const response = await api.put<WatchedResult>(`/media/${mediaId}/watched`, { value });
+    return response.data;
+  },
+  setWatchLater: async (mediaId: string, value: boolean): Promise<WatchedResult> => {
+    const response = await api.put<WatchedResult>(`/media/${mediaId}/watch-later`, { value });
+    return response.data;
+  },
+  getWatchLater: async (): Promise<(MediaItem & MediaItemExtras)[]> => {
+    const response = await api.get<(MediaItem & MediaItemExtras)[]>("/me/watch-later");
+    return response.data;
+  },
+};
+
+export const collectionsApi = {
+  list: async (): Promise<CollectionSummary[]> => {
+    const response = await api.get<CollectionSummary[]>("/collections");
+    return response.data;
+  },
+  get: async (id: string): Promise<CollectionDetail> => {
+    const response = await api.get<CollectionDetail>(`/collections/${id}`);
+    return response.data;
+  },
+  create: async (data: { name: string; description?: string; isPublic?: boolean; mediaId?: string }): Promise<CollectionSummary> => {
+    const response = await api.post<CollectionSummary>("/collections", data);
+    return response.data;
+  },
+  update: async (id: string, data: { name?: string; description?: string; isPublic?: boolean }): Promise<CollectionSummary> => {
+    const response = await api.patch<CollectionSummary>(`/collections/${id}`, data);
+    return response.data;
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/collections/${id}`);
+  },
+  addItem: async (id: string, mediaId: string): Promise<CollectionSummary> => {
+    const response = await api.put<CollectionSummary>(`/collections/${id}/items/${mediaId}`);
+    return response.data;
+  },
+  removeItem: async (id: string, mediaId: string): Promise<CollectionSummary> => {
+    const response = await api.delete<CollectionSummary>(`/collections/${id}/items/${mediaId}`);
+    return response.data;
+  },
+};
+
+export const mostInterestedApi = {
+  get: async (period: InterestPeriod, limit = 5, signal?: AbortSignal): Promise<MostInterestedItem[]> => {
+    const response = await api.get<MostInterestedItem[]>("/media/most-interested", {
+      params: { period, limit },
+      signal,
+    });
+    return response.data;
+  },
+};
+
+export const ratingsApi = {
+  get: async (mediaId: string, signal?: AbortSignal): Promise<RatingSource[]> => {
+    const response = await api.get<{ sources: RatingSource[] }>(`/media/${mediaId}/ratings`, { signal });
+    return response.data?.sources ?? [];
+  },
+};
+
+export const externalReviewsApi = {
+  get: async (mediaId: string, signal?: AbortSignal): Promise<ExternalReview[]> => {
+    const response = await api.get<{ reviews: ExternalReview[] }>(`/media/${mediaId}/external-reviews`, { signal });
+    return response.data?.reviews ?? [];
   },
 };

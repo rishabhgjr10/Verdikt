@@ -10,6 +10,12 @@ import { MediaItem, ReviewWithRelations, Verdict } from "@/types/media";
 import { mediaApi, reviewApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
+import { useRequireAuth } from "@/lib/auth-redirect";
+import { GlassButton } from "@/components/GlassButton";
+import { MediaActions } from "@/components/MediaActions";
+import { RatingBadges } from "@/components/RatingBadges";
+import { ExternalReviews } from "@/components/ExternalReviews";
+import { CreatorsFact, ExpandableDescription } from "@/components/MediaHeroDetails";
 import { NavMediaCategory } from "@/components/Navbar";
 import { PosterImage } from "@/components/PosterImage";
 import {
@@ -88,6 +94,7 @@ export default function MediaDetailPage({
 }) {
   const { id } = use(params);
   const { user } = useAuth();
+  const requireAuth = useRequireAuth();
   const { setActiveCategory } = useNav();
 
   const [mediaItem, setMediaItem] = useState<MediaItem | null>(null);
@@ -209,7 +216,7 @@ export default function MediaDetailPage({
 
   return (
     <div className="relative min-h-screen -mt-28 flex flex-col text-zinc-100">
-      {/* Hero Backdrop Layer (FIX 1 - Seamless 640px Behind Navbar with Zero Offset) */}
+      {/* Hero Backdrop Layer (seamless 640px behind the navbar; bottom mask fades into the page) */}
       {heroImg && (
         <div
           className="absolute top-0 left-0 right-0 h-[640px] z-0 overflow-hidden pointer-events-none"
@@ -232,138 +239,152 @@ export default function MediaDetailPage({
           />
           {/* Subtle second tint layer of dominant/poster color */}
           <div className="absolute inset-0 bg-gradient-to-b from-purple-500/10 via-transparent to-black/30 mix-blend-overlay pointer-events-none" />
+          {/* Contrast scrim: darker toward the bottom and behind the text column */}
+          <div className="media-hero-scrim" />
         </div>
       )}
 
       {/* Detail Page Content (relative z-10 with existing pt-28 clearance) */}
       <div className="relative z-10 flex-1 flex flex-col pt-28">
-        {/* Hero Meta Header */}
-        <div className="max-w-[1400px] w-[calc(100%-48px)] mx-auto px-6 py-10 md:py-16">
-          <div className="flex flex-col md:flex-row gap-8 items-start">
-            {/* Cover Poster with Shared PosterImage */}
-            <div className="w-48 sm:w-56 md:w-64 shrink-0 mx-auto md:mx-0 shadow-2xl">
-              <PosterImage
-                url={mediaItem.coverImage}
-                title={mediaItem.title}
-                mediaType={mediaItem.mediaType}
-                releaseYear={mediaItem.releaseYear}
-                className="shadow-2xl border-white/15"
-              />
+        {/* ── Hero: poster + library actions | details + content actions ── */}
+        <div className="media-hero-container pt-8 pb-12 lg:pt-12">
+          <div className="media-hero-grid">
+            <div className="media-hero-left">
+              <div className="media-hero-poster">
+                <div className="rounded-2xl overflow-hidden border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)]">
+                  <PosterImage
+                    url={mediaItem.coverImage}
+                    title={mediaItem.title}
+                    mediaType={mediaItem.mediaType}
+                    releaseYear={mediaItem.releaseYear}
+                    className="border-0 rounded-none"
+                  />
+                </div>
+              </div>
+
+              {/* Library actions: Watched / Watch Later / Collections (same width as the poster) */}
+              <div className="media-hero-library">
+                <MediaActions
+                  mediaId={mediaItem.id}
+                  mediaTitle={mediaItem.title}
+                  mediaType={mediaItem.mediaType}
+                  onUnwatched={() =>
+                    setReviews((prev) => prev.filter((rev) => rev.user?.id !== user?.id))
+                  }
+                />
+              </div>
             </div>
 
-            {/* Meta Information */}
-            <div className="flex-1 space-y-5 text-center md:text-left">
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-950/80 text-purple-300 border border-purple-500/40">
-                  <TypeIcon className="w-3.5 h-3.5" />
-                  {mediaTypeConfig.label}
-                </span>
-
-                {mediaItem.releaseYear && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-zinc-900/80 text-zinc-300 border border-white/10">
-                    <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                    {mediaItem.releaseYear}
+            <div className="media-hero-right">
+              {/* Title block */}
+              <div className="media-hero-head">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="media-hero-chip media-hero-chip--type text-xs font-semibold">
+                    <TypeIcon className="w-3.5 h-3.5" aria-hidden="true" />
+                    {mediaTypeConfig.label}
                   </span>
-                )}
-              </div>
-
-              <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
-                {mediaItem.title}
-              </h1>
-
-              {/* Creators & Authors */}
-              {mediaItem.creatorsJson && mediaItem.creatorsJson.length > 0 && (
-                <p className="text-xs sm:text-sm text-zinc-400">
-                  <span className="font-semibold text-zinc-300">Created by: </span>
-                  {mediaItem.creatorsJson.join(", ")}
-                </p>
-              )}
-
-              {/* Synopsis */}
-              {mediaItem.description && (
-                <p className="text-sm text-zinc-300 leading-relaxed max-w-3xl">
-                  {mediaItem.description}
-                </p>
-              )}
-
-              {/* Genre Badges */}
-              {mediaItem.genresJson && mediaItem.genresJson.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 justify-center md:justify-start">
-                  {mediaItem.genresJson.map((genre, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-zinc-900 text-zinc-300 border border-white/10"
-                    >
-                      {genre}
+                  {mediaItem.releaseYear && (
+                    <span className="media-hero-chip text-xs font-semibold">
+                      <Calendar className="w-3.5 h-3.5 text-zinc-300" aria-hidden="true" />
+                      {mediaItem.releaseYear}
                     </span>
-                  ))}
+                  )}
                 </div>
-              )}
 
-              {/* Platforms / Where to Watch */}
-              <div className="pt-2">
-                <span className="text-xs font-semibold text-zinc-400 block mb-2 uppercase tracking-wider">
-                  Available On / Platforms
-                </span>
-                {mediaItem.platformsJson && mediaItem.platformsJson.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                    {mediaItem.platformsJson.map((plat, idx) => {
-                      const { bg, text } = getPlatformColor(plat);
-                      const url = getPlatformSearchUrl(plat, mediaItem.title);
-                      return (
-                        <a
-                          key={idx}
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-zinc-900/80 text-zinc-200 hover:border-purple-500/50 hover:scale-[1.02] hover:bg-zinc-800 transition-all shadow-sm group"
-                        >
-                          <span
-                            className={`w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold shrink-0 ${bg} ${text}`}
-                          >
-                            {plat.charAt(0).toUpperCase()}
-                          </span>
-                          {plat}
-                          <ExternalLink className="w-3 h-3 text-zinc-500 group-hover:text-purple-400 transition-colors shrink-0" />
-                        </a>
-                      );
-                    })}
+                <h1
+                  data-rhythm="title"
+                  title={mediaItem.title}
+                  className="text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05] text-white line-clamp-2 break-words"
+                >
+                  {mediaItem.title}
+                </h1>
+              </div>
+
+              {/* Details */}
+              <div className="media-hero-details">
+                {/* External ratings (client-side, never blocks the page; empty slot collapses) */}
+                <div data-rhythm="ratings">
+                  <RatingBadges mediaId={mediaItem.id} />
+                </div>
+
+                {mediaItem.creatorsJson && mediaItem.creatorsJson.length > 0 && (
+                  <CreatorsFact data-rhythm="facts" creators={mediaItem.creatorsJson} />
+                )}
+
+                {mediaItem.description && (
+                  <ExpandableDescription data-rhythm="description" text={mediaItem.description} />
+                )}
+
+                {mediaItem.genresJson && mediaItem.genresJson.length > 0 && (
+                  <ul data-rhythm="genres" className="flex flex-wrap gap-2" aria-label="Genres">
+                    {mediaItem.genresJson.map((genre, idx) => (
+                      <li key={idx} className="media-hero-chip text-xs font-medium">
+                        {genre}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {mediaItem.platformsJson && mediaItem.platformsJson.length > 0 && (
+                  <div data-rhythm="platforms">
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      Available on
+                    </h2>
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                      {mediaItem.platformsJson.map((plat, idx) => {
+                        const { bg, text } = getPlatformColor(plat);
+                        const url = getPlatformSearchUrl(plat, mediaItem.title);
+                        return (
+                          <li key={idx}>
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="media-hero-chip media-hero-chip--link media-hero-chip--platform gap-2 text-sm font-medium group outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                            >
+                              <span
+                                className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${bg} ${text}`}
+                                aria-hidden="true"
+                              >
+                                {plat.charAt(0).toUpperCase()}
+                              </span>
+                              {plat}
+                              <ExternalLink className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200 transition-colors shrink-0" aria-hidden="true" />
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
-                ) : (
-                  <p className="text-xs text-zinc-500 italic">
-                    Not currently available for direct streaming or digital rent / purchase
-                  </p>
                 )}
               </div>
 
-              {/* Action Buttons */}
-              <div className="pt-4 flex flex-wrap items-center justify-center md:justify-start gap-3">
+              {/* Content actions: one matched pair on the text column's left edge */}
+              <div data-rhythm="actions" className="media-hero-content-actions flex flex-col sm:flex-row sm:flex-wrap gap-3">
+                <GlassButton
+                  variant="neutral"
+                  size="hero"
+                  className="w-full sm:w-auto sm:min-w-[176px]"
+                  icon={<PlusCircle className="text-violet-300" />}
+                  onClick={() => requireAuth(() => setReviewModalOpen(true))}
+                >
+                  Write a Verdict
+                </GlassButton>
+
                 {mediaItem.mediaType !== "BOOK" && mediaItem.mediaType !== "GAME" && (
-                  <a
-                    href={
-                      mediaItem.trailerUrl || youtubeTrailerUrl(mediaItem.title)
-                    }
+                  <GlassButton
+                    href={mediaItem.trailerUrl || youtubeTrailerUrl(mediaItem.title)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-sm text-white bg-zinc-900 border border-white/10 hover:bg-zinc-800 hover:border-violet-500/50 transition-all shadow-lg"
+                    variant="neutral"
+                    size="hero"
+                    className="w-full sm:w-auto sm:min-w-[176px]"
+                    title={mediaItem.trailerUrl ? undefined : "Opens a trailer search on YouTube"}
+                    icon={<Play className="text-violet-300 fill-violet-300" />}
                   >
-                    <Play className="w-4 h-4 text-violet-400 fill-violet-400" />
                     Watch Trailer
-                    {!mediaItem.trailerUrl && (
-                      <span className="text-[10px] text-zinc-500 font-normal">
-                        (YouTube)
-                      </span>
-                    )}
-                  </a>
+                  </GlassButton>
                 )}
-
-                <button
-                  onClick={() => setReviewModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-600/30 transition-all cursor-pointer"
-                >
-                  <PlusCircle className="w-5 h-5" />
-                  Write a Verdict
-                </button>
               </div>
             </div>
           </div>
@@ -528,7 +549,7 @@ export default function MediaDetailPage({
             </div>
 
             <button
-              onClick={() => setReviewModalOpen(true)}
+              onClick={() => requireAuth(() => setReviewModalOpen(true))}
               className="text-xs font-semibold text-violet-400 hover:text-violet-300 transition-colors cursor-pointer"
             >
               + Submit Verdict
@@ -624,15 +645,19 @@ export default function MediaDetailPage({
               <p className="text-xs text-zinc-400 mt-1 mb-4">
                 Be the first to share your verdict on {mediaItem.title}!
               </p>
-              <button
-                onClick={() => setReviewModalOpen(true)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white transition-colors cursor-pointer"
+              <GlassButton
+                variant="primary"
+                icon={<PlusCircle className="w-4 h-4" />}
+                onClick={() => requireAuth(() => setReviewModalOpen(true))}
               >
                 Write First Verdict
-              </button>
+              </GlassButton>
             </div>
           )}
         </section>
+
+        {/* ── External reviews (TMDB) — hidden when empty ── */}
+        <ExternalReviews mediaId={mediaItem.id} />
       </div>
     </div>
 

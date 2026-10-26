@@ -298,6 +298,7 @@ public class TmdbService {
                 .mediaType(MediaType.MOVIE)
                 .title(title)
                 .releaseYear(releaseYear)
+                .releaseDate(parseDate(releaseDate))
                 .coverImage(posterPath != null ? "https://image.tmdb.org/t/p/w500" + posterPath : null)
                 .backdropImage(backdropPath != null ? "https://image.tmdb.org/t/p/w1280" + backdropPath : null)
                 .description(overview)
@@ -343,6 +344,7 @@ public class TmdbService {
                 .mediaType(finalType)
                 .title(title)
                 .releaseYear(releaseYear)
+                .releaseDate(parseDate(firstAirDate))
                 .coverImage(posterPath != null ? "https://image.tmdb.org/t/p/w500" + posterPath : null)
                 .backdropImage(backdropPath != null ? "https://image.tmdb.org/t/p/w1280" + backdropPath : null)
                 .description(overview)
@@ -405,6 +407,17 @@ public class TmdbService {
             }
         }
         return null;
+    }
+
+    private java.time.LocalDate parseDate(String dateStr) {
+        if (dateStr == null || dateStr.length() < 10) {
+            return null;
+        }
+        try {
+            return java.time.LocalDate.parse(dateStr.substring(0, 10));
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
     }
 
     private Integer parseYear(String dateStr) {

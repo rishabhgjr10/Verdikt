@@ -75,3 +75,72 @@ export interface MediaItemSearchParams {
   page?: number;
   size?: number;
 }
+
+// ── User media state, collections, Most Interested, ratings ────────────────
+
+export interface RatingSource {
+  key: string;
+  label: string;
+  value: number;
+  display: string;
+  count: number | null;
+  url: string | null;
+}
+
+export interface MediaItemExtras {
+  releaseDate?: string | null;
+  topRatings?: RatingSource[] | null;
+}
+
+export interface MediaUserState {
+  watched: boolean;
+  watchLater: boolean;
+  collectionIds: string[];
+  hasReview: boolean;
+}
+
+export interface WatchedResult {
+  watched: boolean;
+  watchLater: boolean;
+  deletedReview?: boolean;
+}
+
+export interface CollectionSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  isPublic: boolean;
+  isSystem: boolean;
+  systemType: "WATCH_HISTORY" | null;
+  itemCount: number;
+  previewPosters: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CollectionDetail {
+  collection: CollectionSummary;
+  items: (MediaItem & MediaItemExtras)[];
+}
+
+export type InterestPeriod = "WEEK" | "MONTH" | "QUARTER" | "YEAR" | "ALL";
+
+export interface MostInterestedItem {
+  id: string | null;
+  externalId: string;
+  mediaType: MediaType;
+  title: string;
+  posterUrl: string | null;
+  releaseDate: string | null;
+  releaseYear: number | null;
+  statusLabel: string | null;
+  interestedCount: number | null;
+}
+
+export interface ExternalReview {
+  author: string;
+  rating: number | null;
+  createdAt: string | null;
+  excerpt: string;
+  url: string;
+}

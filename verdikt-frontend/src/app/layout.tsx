@@ -3,7 +3,8 @@ import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { NavProvider } from "@/context/NavContext";
 import { AmbientBackground } from "@/components/AmbientBackground";
-import { Navbar } from "@/components/Navbar";
+import { NavbarWrapper } from "@/components/NavbarWrapper";
+import { ToastProvider } from "@/context/ToastContext";
 
 export const metadata: Metadata = {
   title: "Verdikt — Unified Entertainment Verdicts & Reviews",
@@ -21,10 +22,9 @@ export default function RootLayout({
         <AuthProvider>
           <NavProvider>
             <AmbientBackground />
-            <Navbar />
-            <div className="relative z-10 flex min-h-screen flex-col" style={{ paddingTop: "7rem" }}>
-              {children}
-            </div>
+            <ToastProvider>
+              <NavbarWrapper>{children}</NavbarWrapper>
+            </ToastProvider>
           </NavProvider>
         </AuthProvider>
       </body>

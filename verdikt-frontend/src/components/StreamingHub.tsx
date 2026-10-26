@@ -3,6 +3,8 @@
 import React from "react";
 import Link from "next/link";
 import { Sparkles, Radio } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useRequireAuth } from "@/lib/auth-redirect";
 
 interface StreamingPick {
   platform: string;
@@ -44,6 +46,9 @@ const STREAMING_PICKS: StreamingPick[] = [
 ];
 
 export function StreamingHub() {
+  const { user } = useAuth();
+  const requireAuth = useRequireAuth();
+
   return (
     <div className="catalog-widget catalog-radar bg-[#09090B]/90 border border-white/10 rounded-2xl p-5 flex flex-col gap-4 backdrop-blur-xl shadow-xl">
       {/* Widget Header */}
@@ -96,6 +101,13 @@ export function StreamingHub() {
       {/* CTA Button: Quick Verdikt */}
       <Link
         href="/search"
+        onClick={(event) => {
+          // Logged-out users are sent to /login?next=<this page> instead.
+          if (!user) {
+            event.preventDefault();
+            requireAuth(() => {});
+          }
+        }}
         className="w-full bg-[#8B5CF6] hover:bg-[#A78BFA] text-white rounded-full py-2.5 font-semibold text-xs flex justify-center items-center gap-2 shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all cursor-pointer mt-1"
       >
         <Sparkles className="w-3.5 h-3.5 text-violet-200" />

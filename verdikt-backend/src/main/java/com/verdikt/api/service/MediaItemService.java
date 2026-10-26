@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -28,6 +29,12 @@ public class MediaItemService {
     private final MediaItemRepository mediaItemRepository;
     private final UnifiedMediaSearchService unifiedMediaSearchService;
     private final ConcurrentHashMap<String, Object> importLocks = new ConcurrentHashMap<>();
+    private final Set<UUID> releaseDateBackfillAttempted = ConcurrentHashMap.newKeySet();
+    private final java.util.concurrent.ExecutorService backfillExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "release-date-backfill");
+        t.setDaemon(true);
+        return t;
+    });
 
     public MediaItemService(MediaItemRepository mediaItemRepository, UnifiedMediaSearchService unifiedMediaSearchService) {
         this.mediaItemRepository = mediaItemRepository;
@@ -109,6 +116,34 @@ public class MediaItemService {
         MediaItem entity = mediaItemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Media item not found with id: " + id));
         return MediaItemDTO.fromEntity(entity);
+    }
+
+    /**
+     * Lazily fills release_date for items imported before the column existed.
+     * Best effort: at most one provider call per item per process, failures are only logged.
+     */
+    /** Fire-and-forget variant so a slow provider never delays the media page response. */
+    public void backfillReleaseDateAsync(UUID id) {
+        if (releaseDateBackfillAttempted.contains(id)) {
+            return;
+        }
+        backfillExecutor.execute(() -> backfillReleaseDateIfMissing(id));
+    }
+
+    public void backfillReleaseDateIfMissing(UUID id) {
+        MediaItem item = mediaItemRepository.findById(id).orElse(null);
+        if (item == null || item.getReleaseDate() != null || !releaseDateBackfillAttempted.add(id)) {
+            return;
+        }
+        try {
+            MediaItemDTO external = unifiedMediaSearchService.fetchExternalDetails(item.getExternalId(), item.getMediaType());
+            if (external != null && external.getReleaseDate() != null) {
+                item.setReleaseDate(external.getReleaseDate());
+                mediaItemRepository.save(item);
+            }
+        } catch (Exception e) {
+            log.warn("Release date backfill failed for media id={}: {}", id, e.getClass().getSimpleName());
+        }
     }
 
     public MediaItem getOrCreateMediaItem(String externalId, MediaType mediaType) {
@@ -214,6 +249,7 @@ public class MediaItemService {
                 .creatorsJson(dto.getCreatorsJson() != null ? dto.getCreatorsJson() : new ArrayList<>())
                 .genresJson(dto.getGenresJson() != null ? dto.getGenresJson() : new ArrayList<>())
                 .platformsJson(dto.getPlatformsJson() != null ? dto.getPlatformsJson() : new ArrayList<>())
+                .releaseDate(dto.getReleaseDate())
                 .build();
 
         log.info("Persisting new MediaItem to MySQL verdikt_db: title='{}', externalId='{}', type={}",

@@ -3,7 +3,9 @@ package com.verdikt.api.config;
 import com.verdikt.api.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -18,6 +20,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
 import java.util.List;
 
 @Configuration
@@ -44,6 +47,10 @@ public class SecurityConfig {
                         // Auth endpoints
                         .requestMatchers("/auth/**", "/api/auth/**", "/api/v1/auth/**").permitAll()
 
+                        // Per-user media state, library and collections (must precede the public media rule)
+                        .requestMatchers("/api/media/*/me", "/api/media/*/watched", "/api/media/*/watch-later").authenticated()
+                        .requestMatchers("/api/me/**", "/api/collections", "/api/collections/**").authenticated()
+
                         // Media endpoints (search, catalog, external) - permit public access
                         .requestMatchers("/media/**", "/api/media/**", "/api/v1/media/**").permitAll()
 
@@ -56,6 +63,12 @@ public class SecurityConfig {
                         // Any other endpoint requires JWT authentication
                         .anyRequest().authenticated()
                 )
+                // Missing/invalid token -> 401 JSON (the default would be a bare 403)
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) ->
+                                writeError(response, HttpStatus.UNAUTHORIZED, "Authentication required."))
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                writeError(response, HttpStatus.FORBIDDEN, "This action is not allowed.")))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -87,6 +100,13 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private static void writeError(HttpServletResponse response, HttpStatus status, String message) throws IOException {
+        response.setStatus(status.value());
+        response.setContentType("application/json");
+        response.getWriter().write("{\"status\":" + status.value() + ",\"code\":" + status.value()
+                + ",\"error\":\"" + status.getReasonPhrase() + "\",\"message\":\"" + message + "\"}");
     }
 
     @Bean

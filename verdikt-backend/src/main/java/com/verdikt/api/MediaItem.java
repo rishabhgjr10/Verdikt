@@ -12,7 +12,10 @@ import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -67,6 +70,20 @@ public class MediaItem {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "platforms_json", columnDefinition = "json")
     private List<String> platformsJson;
+
+    @Column(name = "release_date")
+    private LocalDate releaseDate;
+
+    @Column(name = "imdb_id", length = 20)
+    private String imdbId;
+
+    /** Cached external rating sources (see RatingsService); never contains provider keys. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "ratings_json", columnDefinition = "json")
+    private List<Map<String, Object>> ratingsJson;
+
+    @Column(name = "ratings_fetched_at")
+    private Instant ratingsFetchedAt;
 
     public MediaItem() {
     }
@@ -184,6 +201,38 @@ public class MediaItem {
         this.platformsJson = platformsJson;
     }
 
+    public LocalDate getReleaseDate() {
+        return releaseDate;
+    }
+
+    public void setReleaseDate(LocalDate releaseDate) {
+        this.releaseDate = releaseDate;
+    }
+
+    public String getImdbId() {
+        return imdbId;
+    }
+
+    public void setImdbId(String imdbId) {
+        this.imdbId = imdbId;
+    }
+
+    public List<Map<String, Object>> getRatingsJson() {
+        return ratingsJson;
+    }
+
+    public void setRatingsJson(List<Map<String, Object>> ratingsJson) {
+        this.ratingsJson = ratingsJson;
+    }
+
+    public Instant getRatingsFetchedAt() {
+        return ratingsFetchedAt;
+    }
+
+    public void setRatingsFetchedAt(Instant ratingsFetchedAt) {
+        this.ratingsFetchedAt = ratingsFetchedAt;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -201,6 +250,7 @@ public class MediaItem {
         private List<String> creatorsJson;
         private List<String> genresJson;
         private List<String> platformsJson;
+        private LocalDate releaseDate;
 
         public Builder id(UUID id) {
             this.id = id;
@@ -262,8 +312,15 @@ public class MediaItem {
             return this;
         }
 
+        public Builder releaseDate(LocalDate releaseDate) {
+            this.releaseDate = releaseDate;
+            return this;
+        }
+
         public MediaItem build() {
-            return new MediaItem(id, externalId, mediaType, title, releaseYear, coverImage, backdropImage, description, trailerUrl, creatorsJson, genresJson, platformsJson);
+            MediaItem item = new MediaItem(id, externalId, mediaType, title, releaseYear, coverImage, backdropImage, description, trailerUrl, creatorsJson, genresJson, platformsJson);
+            item.setReleaseDate(releaseDate);
+            return item;
         }
     }
 }

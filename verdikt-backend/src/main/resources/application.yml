@@ -51,3 +51,14 @@ verdikt:
     google-books:
       api-key: ${GOOGLE_BOOKS_API_KEY:}
       base-url: ${GOOGLE_BOOKS_BASE_URL:https://www.googleapis.com/books/v1}
+    # External ratings providers. A missing key just skips that provider.
+    omdb:
+      api-key: ${OMDB_API_KEY:}
+      base-url: ${OMDB_BASE_URL:https://www.omdbapi.com}
+    rawg:
+      api-key: ${RAWG_API_KEY:}
+      base-url: ${RAWG_BASE_URL:https://api.rawg.io/api}
+    anilist:
+      base-url: ${ANILIST_BASE_URL:https://graphql.anilist.co}
+    openlibrary:
+      base-url: ${OPENLIBRARY_BASE_URL:https://openlibrary.org}

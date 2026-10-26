@@ -1,0 +1,90 @@
+/* Media detail hero: layout system, vertical rhythm, chips and backdrop scrim. */
+
+/* Same box as the navbar capsule (calc(100% - 48px), max 1400px) plus its 1px border and
+   inner padding, so the poster and text start exactly at the "Verdikt." logo's left edge. */
+.media-hero-container {
+  width: calc(100% - 48px);
+  max-width: 1400px;
+  margin-inline: auto;
+  padding-inline: 25px;
+}
+
+/* ── Grid ─────────────────────────────────────────────────────────────
+   Phones: one flex column; the two column wrappers use display: contents so
+   their children can be reordered (poster, title block, library actions,
+   details, content actions) without duplicating anything in the DOM. */
+.media-hero-grid { display: flex; flex-direction: column; gap: 24px; }
+.media-hero-left, .media-hero-right { display: contents; }
+.media-hero-poster { order: 1; width: 176px; align-self: center; }
+.media-hero-head { order: 2; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.media-hero-library { order: 3; }
+.media-hero-details { order: 4; display: flex; flex-direction: column; min-width: 0; }
+.media-hero-content-actions { order: 5; }
+
+@media (min-width: 640px) {
+  .media-hero-grid {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    column-gap: 32px;
+    align-items: start;
+  }
+  .media-hero-left { display: flex; flex-direction: column; gap: 16px; }
+  .media-hero-right { display: flex; flex-direction: column; min-width: 0; max-width: 720px; }
+  .media-hero-poster { width: 100%; align-self: stretch; }
+  .media-hero-head { align-items: flex-start; text-align: left; }
+}
+
+@media (min-width: 1024px) {
+  .media-hero-grid { grid-template-columns: 300px minmax(0, 1fr); column-gap: 48px; }
+}
+
+@media (max-width: 767px) {
+  .media-hero-container { padding-inline: 15px; } /* navbar capsule padding on phones */
+}
+
+/* ── Vertical rhythm (8px scale) ───────────────────────────────────────
+   Each item declares which slot it fills; the space *before* it lives here only.
+   Missing items simply don't render, so no empty gaps are left behind. */
+.media-hero-right [data-rhythm="title"] { margin-top: 12px; }
+.media-hero-right [data-rhythm="ratings"] { margin-top: 16px; }
+.media-hero-right [data-rhythm="facts"] { margin-top: 20px; }
+.media-hero-right [data-rhythm="description"] { margin-top: 16px; }
+.media-hero-right [data-rhythm="genres"] { margin-top: 20px; }
+.media-hero-right [data-rhythm="platforms"] { margin-top: 24px; }
+.media-hero-right [data-rhythm="actions"] { margin-top: 28px; }
+.media-hero-right [data-rhythm]:empty { display: none; }
+
+@media (max-width: 639px) {
+  /* On phones the groups are separated by the 24px column gap instead */
+  .media-hero-details > [data-rhythm]:first-child,
+  .media-hero-details > [data-rhythm]:first-child:empty + [data-rhythm],
+  .media-hero-right [data-rhythm="actions"] { margin-top: 0; }
+}
+
+/* ── Chips ─────────────────────────────────────────────────────────── */
+.media-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding-inline: 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  transition: background-color 0.15s ease;
+}
+.media-hero-chip--link:hover { background-color: rgba(255, 255, 255, 0.15); }
+.media-hero-chip--type { background-color: rgba(139, 92, 246, 0.2); border-color: rgba(196, 181, 253, 0.25); color: #ede9fe; }
+.media-hero-chip--platform { height: 40px; padding-left: 6px; }
+
+/* ── Backdrop scrim (under the navbar glass, over the blurred artwork) ── */
+.media-hero-scrim {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(9, 9, 11, 0.6) 0%, rgba(9, 9, 11, 0) 70%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0.55) 50%, #09090b 100%);
+}

@@ -7,6 +7,8 @@
 @import "../styles/tokens.css";
 @import "../styles/navbar.css";
 @import "../styles/catalog.css";
+@import "../styles/glass.css";
+@import "../styles/media-hero.css";
 
 /* ─────────────────────────────────────────────────────────────
    Verdikt UI Design Tokens (Tailwind v4 CSS-first)
@@ -39,6 +41,49 @@
 @keyframes ambient-drift {
   from { transform: translate3d(-20px, -10px, 0) scale(1); }
   to { transform: translate3d(20px, 20px, 0) scale(1.1); }
+}
+
+@keyframes poster-scroll {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, -50%, 0);
+  }
+}
+
+.poster-col {
+  animation: poster-scroll var(--poster-duration, 60s) linear infinite;
+  will-change: transform;
+}
+
+.poster-col--reverse {
+  animation-direction: reverse;
+}
+
+.poster-wall-mask {
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%),
+              linear-gradient(to right, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%),
+                      linear-gradient(to right, black 70%, transparent 100%);
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+}
+
+@media (max-width: 1023px) {
+  .poster-wall-mask {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+    mask-composite: add;
+    -webkit-mask-composite: source-over;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .poster-col {
+    animation: none !important;
+    transform: none !important;
+  }
 }
 
 :root {
@@ -87,3 +132,38 @@ body {
     scrollbar-width: none;
   }
 }
+
+/* Auth Card & Profile Menu Glass Styling */
+.auth-glass-panel {
+  backdrop-filter: blur(64px) saturate(150%);
+  -webkit-backdrop-filter: blur(64px) saturate(150%);
+}
+
+.profile-glass-menu {
+  backdrop-filter: blur(64px) saturate(150%);
+  -webkit-backdrop-filter: blur(64px) saturate(150%);
+}
+
+@keyframes auth-card-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-auth-card {
+  animation: auth-card-fade-up 300ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-auth-card {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+

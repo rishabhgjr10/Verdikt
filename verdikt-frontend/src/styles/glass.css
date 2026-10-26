@@ -1,0 +1,57 @@
+/* Apple-style glass primitives. backdrop-filter lives here (not in utilities) so it can't be overridden. */
+
+.glass-btn {
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+/* Thin top-edge highlight shared by glass buttons and panels */
+.glass-btn::before,
+.glass-surface::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  pointer-events: none;
+}
+
+/* Floating panels: popovers, dialogs, sheets */
+.glass-surface {
+  position: relative;
+  -webkit-backdrop-filter: blur(64px) saturate(150%);
+  backdrop-filter: blur(64px) saturate(150%);
+}
+
+.glass-overlay {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* 180ms scale + fade used by dialogs and popovers */
+@keyframes glass-pop-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes glass-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes glass-sheet-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.glass-pop-in { animation: glass-pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.glass-fade-in { animation: glass-fade-in 180ms ease-out both; }
+.glass-sheet-up { animation: glass-sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@media (min-width: 640px) {
+  .glass-sheet-up { animation-name: glass-pop-in; animation-duration: 180ms; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-pop-in, .glass-fade-in, .glass-sheet-up { animation: none; }
+  .glass-btn { transition: none; }
+}

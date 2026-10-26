@@ -45,6 +45,7 @@ public class MediaController {
 
     @GetMapping("/{id}")
     public ResponseEntity<MediaItemDTO> getById(@PathVariable UUID id) {
+        mediaItemService.backfillReleaseDateAsync(id);
         MediaItemDTO mediaItem = mediaItemService.getMediaItemById(id);
         return ResponseEntity.ok(mediaItem);
     }

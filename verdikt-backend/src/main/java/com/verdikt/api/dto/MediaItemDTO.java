@@ -3,7 +3,9 @@ package com.verdikt.api.dto;
 import com.verdikt.api.MediaItem;
 import com.verdikt.api.MediaType;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public class MediaItemDTO {
@@ -20,6 +22,9 @@ public class MediaItemDTO {
     private List<String> creatorsJson;
     private List<String> genresJson;
     private List<String> platformsJson;
+    private LocalDate releaseDate;
+    /** Up to two cached rating sources (from media_items.ratings_json); never triggers provider calls. */
+    private List<Map<String, Object>> topRatings;
 
     public MediaItemDTO() {
     }
@@ -137,11 +142,27 @@ public class MediaItemDTO {
         this.platformsJson = platformsJson;
     }
 
+    public LocalDate getReleaseDate() {
+        return releaseDate;
+    }
+
+    public void setReleaseDate(LocalDate releaseDate) {
+        this.releaseDate = releaseDate;
+    }
+
+    public List<Map<String, Object>> getTopRatings() {
+        return topRatings;
+    }
+
+    public void setTopRatings(List<Map<String, Object>> topRatings) {
+        this.topRatings = topRatings;
+    }
+
     public static MediaItemDTO fromEntity(MediaItem entity) {
         if (entity == null) {
             return null;
         }
-        return MediaItemDTO.builder()
+        MediaItemDTO dto = MediaItemDTO.builder()
                 .id(entity.getId())
                 .externalId(entity.getExternalId())
                 .mediaType(entity.getMediaType())
@@ -154,7 +175,12 @@ public class MediaItemDTO {
                 .creatorsJson(entity.getCreatorsJson())
                 .genresJson(entity.getGenresJson())
                 .platformsJson(entity.getPlatformsJson())
+                .releaseDate(entity.getReleaseDate())
                 .build();
+        if (entity.getRatingsJson() != null && !entity.getRatingsJson().isEmpty()) {
+            dto.setTopRatings(entity.getRatingsJson().stream().limit(2).toList());
+        }
+        return dto;
     }
 
     public static Builder builder() {
@@ -174,6 +200,7 @@ public class MediaItemDTO {
         private List<String> creatorsJson;
         private List<String> genresJson;
         private List<String> platformsJson;
+        private LocalDate releaseDate;
 
         public Builder id(UUID id) {
             this.id = id;
@@ -235,8 +262,15 @@ public class MediaItemDTO {
             return this;
         }
 
+        public Builder releaseDate(LocalDate releaseDate) {
+            this.releaseDate = releaseDate;
+            return this;
+        }
+
         public MediaItemDTO build() {
-            return new MediaItemDTO(id, externalId, mediaType, title, releaseYear, coverImage, backdropImage, description, trailerUrl, creatorsJson, genresJson, platformsJson);
+            MediaItemDTO dto = new MediaItemDTO(id, externalId, mediaType, title, releaseYear, coverImage, backdropImage, description, trailerUrl, creatorsJson, genresJson, platformsJson);
+            dto.setReleaseDate(releaseDate);
+            return dto;
         }
     }
 }
