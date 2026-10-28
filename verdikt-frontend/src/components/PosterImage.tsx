@@ -82,6 +82,7 @@ export function PosterImage({
           alt={title}
           referrerPolicy="no-referrer"
           loading="lazy"
+          decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => setError(true)}
           className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105 ${

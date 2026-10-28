@@ -83,14 +83,22 @@ export function useMostInterested(period: InterestPeriod, limit: number) {
 
   useEffect(() => {
     const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
     mostInterestedApi
       .get(period, limit, controller.signal)
       .then((data) => setSettled({ key: requestKey, items: data, error: false }))
       .catch((err) => {
-        if (controller.signal.aborted || err?.name === "CanceledError") return;
+        if (controller.signal.aborted || err?.name === "CanceledError") {
+          setSettled((prev) => ({ key: requestKey, items: prev.items, error: true }));
+          return;
+        }
         setSettled((prev) => ({ key: requestKey, items: prev.items, error: true }));
-      });
-    return () => controller.abort();
+      })
+      .finally(() => clearTimeout(timer));
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [period, limit, requestKey]);
 
   const loading = settled.key !== requestKey;

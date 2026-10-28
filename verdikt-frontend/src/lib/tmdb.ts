@@ -192,77 +192,86 @@ export function deduplicateMedia<
   });
 }
 
+// ── In-Memory TMDB Cache & Resilient Timeout Fetcher ────────────────────────
+const tmdbMemoryCache = new Map<string, { data: any; expiry: number }>();
+
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 5000
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: options.signal ?? controller.signal,
+    });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function cachedFetchJson<T>(url: string, ttlMs = 15 * 60 * 1000): Promise<T | null> {
+  const cached = tmdbMemoryCache.get(url);
+  if (cached && cached.expiry > Date.now()) {
+    return cached.data as T;
+  }
+  try {
+    const res = await fetchWithTimeout(url, {}, 5000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    tmdbMemoryCache.set(url, { data, expiry: Date.now() + ttlMs });
+    return data as T;
+  } catch (err) {
+    console.warn(`TMDB request timed out or failed: ${url}`, err);
+    return null;
+  }
+}
+
 /** Fetch trending movies of the day from TMDB */
 export async function fetchTrendingMovies(): Promise<TmdbItem[]> {
-  try {
-    const res = await fetch(
-      `${TMDB_BASE_URL}/trending/movie/day?api_key=${TMDB_API_KEY}&language=en-US`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map((m: TmdbItem) => ({
-      ...m,
-      media_type: "movie",
-    }));
-  } catch (err) {
-    console.error("Failed to fetch TMDB trending movies", err);
-    return [];
-  }
+  const data = await cachedFetchJson<{ results?: TmdbItem[] }>(
+    `${TMDB_BASE_URL}/trending/movie/day?api_key=${TMDB_API_KEY}&language=en-US`
+  );
+  if (!data?.results) return [];
+  return data.results.map((m: TmdbItem) => ({
+    ...m,
+    media_type: "movie",
+  }));
 }
 
 /** Fetch trending TV shows of the day from TMDB */
 export async function fetchTrendingTv(): Promise<TmdbItem[]> {
-  try {
-    const res = await fetch(
-      `${TMDB_BASE_URL}/trending/tv/day?api_key=${TMDB_API_KEY}&language=en-US`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map((t: TmdbItem) => ({
-      ...t,
-      media_type: "tv",
-    }));
-  } catch (err) {
-    console.error("Failed to fetch TMDB trending TV", err);
-    return [];
-  }
+  const data = await cachedFetchJson<{ results?: TmdbItem[] }>(
+    `${TMDB_BASE_URL}/trending/tv/day?api_key=${TMDB_API_KEY}&language=en-US`
+  );
+  if (!data?.results) return [];
+  return data.results.map((t: TmdbItem) => ({
+    ...t,
+    media_type: "tv",
+  }));
 }
 
 /** Fetch trending mixed media of the day from TMDB */
 export async function fetchTrendingAll(): Promise<TmdbItem[]> {
-  try {
-    const res = await fetch(
-      `${TMDB_BASE_URL}/trending/all/day?api_key=${TMDB_API_KEY}&language=en-US`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.results || [];
-  } catch (err) {
-    console.error("Failed to fetch TMDB trending all", err);
-    return [];
-  }
+  const data = await cachedFetchJson<{ results?: TmdbItem[] }>(
+    `${TMDB_BASE_URL}/trending/all/day?api_key=${TMDB_API_KEY}&language=en-US`
+  );
+  return data?.results || [];
 }
 
 /** Fetch popular Anime series (TV with animation genre in Japanese) */
 export async function fetchTrendingAnime(): Promise<TmdbItem[]> {
-  try {
-    const res = await fetch(
-      `${TMDB_BASE_URL}/discover/tv?api_key=${TMDB_API_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&language=en-US`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map((a: TmdbItem) => ({
-      ...a,
-      media_type: "tv",
-    }));
-  } catch (err) {
-    console.error("Failed to fetch TMDB anime", err);
-    return [];
-  }
+  const data = await cachedFetchJson<{ results?: TmdbItem[] }>(
+    `${TMDB_BASE_URL}/discover/tv?api_key=${TMDB_API_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&language=en-US`
+  );
+  if (!data?.results) return [];
+  return data.results.map((a: TmdbItem) => ({
+    ...a,
+    media_type: "tv",
+  }));
 }
 
 /**
@@ -270,8 +279,10 @@ export async function fetchTrendingAnime(): Promise<TmdbItem[]> {
  */
 export async function fetchTmdbMovieDetails(tmdbId: string | number): Promise<TmdbItem | null> {
   try {
-    const res = await fetch(
-      `${TMDB_BASE_URL}/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=en-US`
+    const res = await fetchWithTimeout(
+      `${TMDB_BASE_URL}/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=en-US`,
+      {},
+      5000
     );
     if (!res.ok) return null;
     return await res.json();
@@ -320,9 +331,11 @@ export async function fetchTmdbHeroDetails(
   const isTv = type === "SERIES" || type === "ANIME";
   try {
     // Text-free (null) backdrops first so the slideshow has no burned-in titles
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${TMDB_BASE_URL}/${isTv ? "tv" : "movie"}/${tmdbId}?api_key=${TMDB_API_KEY}&language=en-US` +
-        `&append_to_response=credits,release_dates,content_ratings,images&include_image_language=null,en`
+        `&append_to_response=credits,release_dates,content_ratings,images&include_image_language=null,en`,
+      {},
+      6000
     );
     if (!res.ok) return null;
     const d = await res.json();
@@ -386,8 +399,10 @@ export async function fetchTmdbHeroDetails(
  */
 export async function fetchTmdbCollection(collectionId: string | number): Promise<TmdbCollection | null> {
   try {
-    const res = await fetch(
-      `${TMDB_BASE_URL}/collection/${collectionId}?api_key=${TMDB_API_KEY}&language=en-US`
+    const res = await fetchWithTimeout(
+      `${TMDB_BASE_URL}/collection/${collectionId}?api_key=${TMDB_API_KEY}&language=en-US`,
+      {},
+      5000
     );
     if (!res.ok) return null;
     return await res.json();
@@ -406,8 +421,10 @@ export async function fetchTmdbRecommendations(
 ): Promise<TmdbItem[]> {
   try {
     const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
-    const res = await fetch(
-      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/recommendations?api_key=${TMDB_API_KEY}&language=en-US`
+    const res = await fetchWithTimeout(
+      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/recommendations?api_key=${TMDB_API_KEY}&language=en-US`,
+      {},
+      5000
     );
     if (!res.ok) return [];
     const data = await res.json();
@@ -428,7 +445,11 @@ export async function fetchTmdbRecommendations(
 export async function fetchTmdbTrailerUrl(type: MediaType, tmdbId: string | number): Promise<string | null> {
   try {
     const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
-    const res = await fetch(`${TMDB_BASE_URL}/${endpoint}/${tmdbId}/videos?api_key=${TMDB_API_KEY}&language=en-US`);
+    const res = await fetchWithTimeout(
+      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/videos?api_key=${TMDB_API_KEY}&language=en-US`,
+      {},
+      4000
+    );
     if (!res.ok) return null;
     const data = await res.json();
     const videos: { site: string; type: string; official: boolean; key: string }[] = (data.results || []).filter(
@@ -464,7 +485,11 @@ export async function fetchTmdbWatchProvidersIN(
 ): Promise<TmdbWatchProvider[] | null> {
   try {
     const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
-    const res = await fetch(`${TMDB_BASE_URL}/${endpoint}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
+    const res = await fetchWithTimeout(
+      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`,
+      {},
+      5000
+    );
     if (!res.ok) return null;
     const data = await res.json();
     const inProviders = data.results?.IN;
@@ -494,10 +519,10 @@ async function tmdbList(path: string, params: TmdbParams, mediaType?: "movie" | 
   try {
     const query = new URLSearchParams({ api_key: TMDB_API_KEY, language: "en-US" });
     for (const [key, value] of Object.entries(params)) query.set(key, String(value));
-    const res = await fetch(`${TMDB_BASE_URL}${path}?${query}`, { next: { revalidate: 3600 } });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const results: TmdbItem[] = data.results || [];
+    const url = `${TMDB_BASE_URL}${path}?${query}`;
+    const data = await cachedFetchJson<{ results?: TmdbItem[] }>(url);
+    if (!data?.results) return [];
+    const results: TmdbItem[] = data.results;
     return mediaType ? results.map((r) => ({ ...r, media_type: mediaType })) : results;
   } catch (err) {
     console.error(`TMDB request failed: ${path}`, err);

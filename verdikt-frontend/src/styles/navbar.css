@@ -71,11 +71,9 @@
 .catalog-empty { grid-column: 1 / -1; padding-block: 48px; }
 @media (min-width: 768px) and (max-width: 1100px) { .shared-navbar { gap: 14px; } .shared-category { padding-inline: 9px; } .shared-navbar .shared-explore { padding-inline: 10px; margin-right: 0; } .shared-utilities { gap: 2px; } }
 @media (max-width: 767px) {
-  .ambient-main { top: -108px; left: calc(50% - 270px); width: 540px; height: 252px; }
-  .ambient-magenta { top: -72px; width: 312px; height: 216px; }
-  .ambient-indigo { top: -60px; width: 336px; height: 216px; }
-  .ambient-core { top: 6px; width: 156px; height: 72px; }
-  .ambient-accent { top: 24px; width: 132px; height: 60px; }
+  .ambient-blob { animation: none !important; will-change: auto !important; }
+  .ambient-magenta, .ambient-indigo, .ambient-core, .ambient-accent { display: none !important; }
+  .ambient-main { top: -80px; left: calc(50% - 180px); width: 360px; height: 180px; filter: blur(50px); opacity: 0.7; }
   .shared-navbar { gap: 8px; padding-inline: 14px; }
   .shared-navbar .shared-brand { font-size: 19px; }
   .shared-navbar .shared-categories { flex: 1; }

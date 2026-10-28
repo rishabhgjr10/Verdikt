@@ -125,38 +125,6 @@ async function resolveBooks(seeds: BookSeed[]): Promise<DiscoveryItem[]> {
   return resolved.filter((b): b is DiscoveryItem => b !== null);
 }
 
-/** Popular, highly rated recent books (Google Books has no trending endpoint, so this is curated). */
-const POPULAR_BOOKS: BookSeed[] = [
-  { title: "Fourth Wing", author: "Rebecca Yarros", year: 2023 },
-  { title: "The Immortals of Meluha", author: "Amish", year: 2010, aliases: ["immortals of meluha"] },
-  { title: "Tomorrow, and Tomorrow, and Tomorrow", author: "Gabrielle Zevin", year: 2022 },
-  { title: "The Palace of Illusions", author: "Chitra Banerjee Divakaruni", year: 2008 },
-  { title: "Atomic Habits", author: "James Clear", year: 2018 },
-  { title: "The White Tiger", author: "Aravind Adiga", year: 2008 },
-];
-
-/** "Worth Your Time To Read": acclaimed books across decades, Indian and global alternating. */
-const WORTH_READING: BookSeed[] = [
-  { title: "The God of Small Things", author: "Arundhati Roy", year: 1997 },
-  { title: "Nineteen Eighty-Four", author: "George Orwell", year: 1949, aliases: ["1984"] },
-  { title: "Sacred Games", author: "Vikram Chandra", year: 2006 },
-  { title: "Dune", author: "Frank Herbert", year: 1965 },
-  { title: "Malgudi Days", author: "R. K. Narayan", year: 1943 },
-  { title: "Crime and Punishment", author: "Fyodor Dostoevsky", year: 1866 },
-  { title: "A Suitable Boy", author: "Vikram Seth", year: 1993 },
-  { title: "Project Hail Mary", author: "Andy Weir", year: 2021 },
-  { title: "Midnight's Children", author: "Salman Rushdie", year: 1981 },
-  { title: "To Kill a Mockingbird", author: "Harper Lee", year: 1960 },
-  { title: "The Alchemist", author: "Paulo Coelho", year: 1988 },
-  { title: "The White Tiger", author: "Aravind Adiga", year: 2008 },
-  { title: "Sapiens", author: "Yuval Noah Harari", year: 2011 },
-  { title: "The Immortals of Meluha", author: "Amish", year: 2010, aliases: ["immortals of meluha"] },
-  { title: "Atomic Habits", author: "James Clear", year: 2018 },
-  { title: "Train to Pakistan", author: "Khushwant Singh", year: 1956 },
-  { title: "Tomorrow, and Tomorrow, and Tomorrow", author: "Gabrielle Zevin", year: 2022 },
-  { title: "The Palace of Illusions", author: "Chitra Banerjee Divakaruni", year: 2008 },
-];
-
 const fallbackBook = (externalId: string, title: string, author: string, year: number, genre: string): DiscoveryItem => ({
   id: `book-${externalId}`,
   externalId,
@@ -190,47 +158,44 @@ const fallbackIsbnBook = (isbn: string, title: string, author: string, year: num
   href: `/search?q=${encodeURIComponent(title)}&type=BOOK`,
 });
 
-/**
- * Shown when Google Books can't resolve the weekly picks (its 1,000-a-day quota runs out). The Google ids are
- * real volumes already imported locally, so those cards open their book page.
- * shortcut: the ISBN entries link to a book search instead, since their Google ids couldn't be looked up while
- * the quota was spent; swap in volume ids once the API answers again.
- */
-const FALLBACK_BOOKS: DiscoveryItem[] = [
-  fallbackIsbnBook("9780062315007", "The Alchemist", "Paulo Coelho", 1988, "Fiction"),
-  fallbackIsbnBook("9780593135204", "Project Hail Mary", "Andy Weir", 2021, "Science Fiction"),
-  fallbackIsbnBook("9780062316097", "Sapiens", "Yuval Noah Harari", 2011, "History"),
-  fallbackIsbnBook("9780735211292", "Atomic Habits", "James Clear", 2018, "Self-Help"),
-  fallbackIsbnBook("9780061120084", "To Kill a Mockingbird", "Harper Lee", 1960, "Classics"),
-  fallbackIsbnBook("9780812979657", "The God of Small Things", "Arundhati Roy", 1997, "Literary Fiction"),
-  fallbackIsbnBook("9780812976533", "Midnight's Children", "Salman Rushdie", 1981, "Literary Fiction"),
-  fallbackBook("kotPYEqx7kMC", "1984", "George Orwell", 1949, "Classics"),
-  fallbackBook("B1hSG45JCX4C", "Dune", "Frank Herbert", 1965, "Science Fiction"),
-  fallbackBook("agMWBAAAQBAJ", "Sacred Games", "Vikram Chandra", 2006, "Crime"),
-  fallbackBook("bzuRAQAACAAJ", "मुसाफ़िर cafe", "Divya Prakash Dubey", 2016, "Hindi Fiction"),
+/** Popular, highly rated recent books (instant local catalog for fast page loading). */
+export const CURATED_POPULAR_BOOKS: DiscoveryItem[] = [
   fallbackBook("EP-gEAAAQBAJ", "Fourth Wing", "Rebecca Yarros", 2023, "Fantasy"),
+  fallbackIsbnBook("9789380658742", "The Immortals of Meluha", "Amish", 2010, "Mythological Fiction"),
+  fallbackIsbnBook("9780593321201", "Tomorrow, and Tomorrow, and Tomorrow", "Gabrielle Zevin", 2022, "Fiction"),
+  fallbackIsbnBook("9781400096206", "The Palace of Illusions", "Chitra Banerjee Divakaruni", 2008, "Mythological Fiction"),
+  fallbackIsbnBook("9780735211292", "Atomic Habits", "James Clear", 2018, "Self-Help"),
+  fallbackIsbnBook("9781416562603", "The White Tiger", "Aravind Adiga", 2008, "Literary Fiction"),
 ];
 
-function randomOrder<T>(list: T[]): T[] {
-  const a = [...list];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+/** "Worth Your Time To Read": acclaimed books across decades, Indian and global alternating. */
+export const CURATED_WORTH_READING: DiscoveryItem[] = [
+  fallbackIsbnBook("9780812979657", "The God of Small Things", "Arundhati Roy", 1997, "Literary Fiction"),
+  fallbackBook("kotPYEqx7kMC", "1984", "George Orwell", 1949, "Classics"),
+  fallbackBook("agMWBAAAQBAJ", "Sacred Games", "Vikram Chandra", 2006, "Crime"),
+  fallbackBook("B1hSG45JCX4C", "Dune", "Frank Herbert", 1965, "Science Fiction"),
+  fallbackIsbnBook("9788185986173", "Malgudi Days", "R. K. Narayan", 1943, "Classics"),
+  fallbackIsbnBook("9780140449136", "Crime and Punishment", "Fyodor Dostoevsky", 1866, "Classics"),
+  fallbackIsbnBook("9780143419983", "A Suitable Boy", "Vikram Seth", 1993, "Literary Fiction"),
+  fallbackIsbnBook("9780593135204", "Project Hail Mary", "Andy Weir", 2021, "Science Fiction"),
+  fallbackIsbnBook("9780812976533", "Midnight's Children", "Salman Rushdie", 1981, "Literary Fiction"),
+  fallbackIsbnBook("9780061120084", "To Kill a Mockingbird", "Harper Lee", 1960, "Classics"),
+  fallbackIsbnBook("9780062315007", "The Alchemist", "Paulo Coelho", 1988, "Fiction"),
+  fallbackIsbnBook("9781416562603", "The White Tiger", "Aravind Adiga", 2008, "Literary Fiction"),
+  fallbackIsbnBook("9780062316097", "Sapiens", "Yuval Noah Harari", 2011, "History"),
+  fallbackIsbnBook("9789380658742", "The Immortals of Meluha", "Amish", 2010, "Mythological Fiction"),
+  fallbackIsbnBook("9780735211292", "Atomic Habits", "James Clear", 2018, "Self-Help"),
+  fallbackIsbnBook("9780143065883", "Train to Pakistan", "Khushwant Singh", 1956, "Historical Fiction"),
+  fallbackIsbnBook("9780593321201", "Tomorrow, and Tomorrow, and Tomorrow", "Gabrielle Zevin", 2022, "Fiction"),
+  fallbackIsbnBook("9781400096206", "The Palace of Illusions", "Chitra Banerjee Divakaruni", 2008, "Mythological Fiction"),
+];
 
 /**
  * All picks, this week's six first; the homepage shows six and each Shuffle brings in six others.
- * Too few resolved (quota spent or Google down) -> topped up from FALLBACK_BOOKS, in random order,
- * so the shelf never empties.
+ * Pre-cached with direct covers for instant loading without blocking mobile networks.
  */
 export async function fetchWorthReadingBooks(): Promise<DiscoveryItem[]> {
-  const live = await resolveBooks(weeklyRotation(WORTH_READING, BOOKS_SHOWN));
-  if (live.length >= BOOKS_SHOWN) return live;
-  console.warn("Google Books unavailable; using the local fallback catalog for Worth Your Time To Read.");
-  const shown = new Set(live.map((b) => normalize(b.title)));
-  return [...live, ...randomOrder(FALLBACK_BOOKS.filter((b) => !shown.has(normalize(b.title))))];
+  return weeklyRotation(CURATED_WORTH_READING, BOOKS_SHOWN);
 }
 
 // ── Editor's Pick Of The Week ────────────────────────────────────────────────
@@ -267,14 +232,14 @@ export async function fetchEditorsPicks(): Promise<DiscoveryItem[]> {
 
 /** 10 titles, round-robin: Indian 3 · Global 3 · Books 2 · Anime 2. */
 export async function fetchBalancedFeed(): Promise<DiscoveryItem[]> {
-  const [indianMovies, indianTv, trending, anime, books] = await Promise.all([
+  const [indianMovies, indianTv, trending, anime] = await Promise.all([
     fetchIndianTitles("movie"),
     fetchIndianTitles("tv"),
     fetchTrendingAllWeek(),
     fetchTrendingAnime(),
-    resolveBooks(weeklySlice(POPULAR_BOOKS, 2)),
   ]);
 
+  const books = weeklySlice(CURATED_POPULAR_BOOKS, 2);
   const indian = interleave([toItems(indianMovies, "MOVIE"), toItems(indianTv, "SERIES")], 3);
   const indianKeys = new Set(indian.map(dedupeKey));
   const global = trending

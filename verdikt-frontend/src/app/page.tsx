@@ -204,17 +204,18 @@ function HomeHero({
             >
               {src && s.item?.backdropImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt="" className="w-full h-full object-cover" />
+                <img src={src} alt="" className="w-full h-full object-cover" decoding="async" />
               ) : src ? (
                 // Book covers are portrait and low-res: a blurred copy fills the banner as ambient colour,
                 // and the cover itself sits sharp on top like a framed book (top-centre on phones, right on desktop)
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt="" className="w-full h-full object-cover blur-2xl scale-110 opacity-50" />
+                  <img src={src} alt="" className="w-full h-full object-cover blur-2xl scale-110 opacity-50" decoding="async" />
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={src}
                     alt=""
+                    decoding="async"
                     className="absolute top-6 left-1/2 -translate-x-1/2 h-32 md:top-1/2 md:left-auto md:right-[12%] md:translate-x-0 md:-translate-y-1/2 md:h-[55%] aspect-[2/3] object-cover rounded-xl ring-1 ring-white/15 shadow-[0_24px_50px_rgba(0,0,0,0.6)] -rotate-2"
                   />
                 </>
@@ -720,7 +721,7 @@ function PlatformPicker({
 
 // ── Streaming platform shelf: one section, platform picked from a dropdown ───
 // Two rows of six on screen; the rest of the pool feeds Shuffle
-const PLATFORM_POOL = 40;
+const PLATFORM_POOL = 24;
 function PlatformShelf() {
   const [platformId, setPlatformId] = useState(PLATFORMS[0].id);
   // Results cached per platform so switching back is instant
