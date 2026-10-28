@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 const poster = (item: TmdbItem | undefined, size = "w342") =>
-  item?.poster_path ? `https://image.tmdb.org/t/p/${size}${item.poster_path}` : null;
+  item?.poster_path ? `/tmdb-img/t/p/${size}${item.poster_path}` : null;
 
 // Slow vertical drift for the hero poster wall; motion stops for people who ask for reduced motion
 const DRIFT_CSS = `

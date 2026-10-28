@@ -89,7 +89,8 @@ function sanitizeImageUrl(url: string | null | undefined): string | null {
   if (!url || typeof url !== "string" || !url.trim()) return null;
   const trimmed = url.trim();
   if (trimmed.startsWith("http://")) return trimmed.replace("http://", "https://");
-  if (trimmed.startsWith("/")) return `https://image.tmdb.org/t/p/w1280${trimmed}`;
+  if (trimmed.startsWith("/tmdb-img/")) return trimmed;
+  if (trimmed.startsWith("/")) return `/tmdb-img/t/p/w1280${trimmed}`;
   return trimmed;
 }
 
@@ -119,7 +120,7 @@ const OFFER_LABELS: Record<WatchOffer, string> = {
 function ProviderRow({ provider, title }: { provider: TmdbWatchProvider; title: string }) {
   const name = provider.provider_name;
   const local = findPlatformLogo(name);
-  const sources = [local?.src, provider.logo_path && `https://image.tmdb.org/t/p/original${provider.logo_path}`].filter(
+  const sources = [local?.src, provider.logo_path && `/tmdb-img/t/p/original${provider.logo_path}`].filter(
     Boolean
   ) as string[];
   const [failed, setFailed] = useState(0);

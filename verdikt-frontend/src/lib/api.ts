@@ -25,7 +25,17 @@ const API_BASE_URL =
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 6000,
+  // Long enough for Render's free tier to wake up (50-90s) instead of failing every first request after idle
+  timeout: 90000,
+  // Stored poster/backdrop URLs point at image.tmdb.org, which some mobile networks block: use this site's proxy
+  transformResponse: [
+    (data) => (typeof data === "string" ? data.replace(/https?:\/\/image\.tmdb\.org\//g, "/tmdb-img/") : data),
+    ...(Array.isArray(axios.defaults.transformResponse)
+      ? axios.defaults.transformResponse
+      : axios.defaults.transformResponse
+        ? [axios.defaults.transformResponse]
+        : []),
+  ],
   headers: {
     "Content-Type": "application/json",
   },

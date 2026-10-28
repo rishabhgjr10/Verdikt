@@ -26,7 +26,8 @@ function sanitizeUrl(url?: string | null): string | null {
   const trimmed = url.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("http://")) return trimmed.replace("http://", "https://");
-  if (trimmed.startsWith("/")) return `https://image.tmdb.org/t/p/w500${trimmed}`;
+  if (trimmed.startsWith("/tmdb-img/")) return trimmed;
+  if (trimmed.startsWith("/")) return `/tmdb-img/t/p/w500${trimmed}`;
   return trimmed;
 }
 

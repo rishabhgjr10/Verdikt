@@ -83,7 +83,8 @@ export function useMostInterested(period: InterestPeriod, limit: number) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
+    // Render's free tier can take 50-90s to wake; a short limit made this list fail on every cold start
+    const timer = setTimeout(() => controller.abort(), 90000);
     mostInterestedApi
       .get(period, limit, controller.signal)
       .then((data) => setSettled({ key: requestKey, items: data, error: false }))

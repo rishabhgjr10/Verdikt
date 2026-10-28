@@ -5,7 +5,10 @@
 import { MediaItem, MediaType, Verdict } from "@/types/media";
 import { bucketForDate, scheduleWindow, type ScheduleTimeline } from "@/lib/schedule-dates";
 
-const TMDB_BASE_URL = "https://api.themoviedb.org/3";
+// Browser requests go through this site's /tmdb-api rewrite (see next.config.ts); server code calls TMDB directly
+const TMDB_BASE_URL = typeof window === "undefined" ? "https://api.themoviedb.org/3" : "/tmdb-api";
+/** TMDB image CDN via this site's rewrite; relative, so it works in server-rendered HTML too */
+export const TMDB_IMG = "/tmdb-img";
 const TMDB_API_KEY =
   process.env.NEXT_PUBLIC_TMDB_API_KEY || "801a93954c3a3f63f691e72f175cf265";
 
@@ -47,7 +50,8 @@ export interface TmdbCollection {
 export function sanitizeImageUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   if (url.startsWith("http://")) return url.replace("http://", "https://");
-  if (url.startsWith("/")) return `https://image.tmdb.org/t/p/w500${url}`;
+  if (url.startsWith(`${TMDB_IMG}/`)) return url;
+  if (url.startsWith("/")) return `${TMDB_IMG}/t/p/w500${url}`;
   return url;
 }
 
@@ -55,7 +59,8 @@ export function sanitizeImageUrl(url: string | null | undefined): string | null 
 export function sanitizeBackdropUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   if (url.startsWith("http://")) return url.replace("http://", "https://");
-  if (url.startsWith("/")) return `https://image.tmdb.org/t/p/w1280${url}`;
+  if (url.startsWith(`${TMDB_IMG}/`)) return url;
+  if (url.startsWith("/")) return `${TMDB_IMG}/t/p/w1280${url}`;
   return url;
 }
 
@@ -94,10 +99,10 @@ export function tmdbToMediaItem(
     title,
     releaseYear: Number.isNaN(year) ? null : year,
     coverImage: item.poster_path
-      ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
+      ? `${TMDB_IMG}/t/p/w500${item.poster_path}`
       : null,
     backdropImage: item.backdrop_path
-      ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
+      ? `${TMDB_IMG}/t/p/w1280${item.backdrop_path}`
       : null,
     description: item.overview || null,
     trailerUrl: null,
@@ -366,7 +371,7 @@ export async function fetchTmdbHeroDetails(
     const backdrops = ((d.images?.backdrops || []) as { file_path: string; iso_639_1: string | null }[])
       .sort((a, b) => Number(a.iso_639_1 !== null) - Number(b.iso_639_1 !== null))
       .slice(0, 3)
-      .map((b) => `https://image.tmdb.org/t/p/w1280${b.file_path}`);
+      .map((b) => `${TMDB_IMG}/t/p/w1280${b.file_path}`);
 
     const cast = ((d.credits?.cast || []) as { id: number; name: string; character?: string; profile_path: string | null }[])
       .slice(0, 12)
@@ -374,7 +379,7 @@ export async function fetchTmdbHeroDetails(
         id: c.id,
         name: c.name,
         character: c.character || "",
-        profileUrl: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : null,
+        profileUrl: c.profile_path ? `${TMDB_IMG}/t/p/w185${c.profile_path}` : null,
       }));
 
     return {
@@ -636,7 +641,7 @@ export async function fetchEntertainmentSchedule({
                 type,
                 title: (i.title || i.name || "Untitled").trim(),
                 date,
-                poster: `https://image.tmdb.org/t/p/w500${i.poster_path}`,
+                poster: `${TMDB_IMG}/t/p/w500${i.poster_path}`,
                 popularity: i.popularity ?? 0,
               }]
             : [];

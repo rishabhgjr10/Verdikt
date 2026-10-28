@@ -63,7 +63,7 @@ export function getPlatformColor(platform: string): { bg: string; text: string }
 export function tmdbLogoUrl(logoPath: string | null | undefined): string | null {
   if (!logoPath) return null;
   const clean = logoPath.startsWith("/") ? logoPath : `/${logoPath}`;
-  return `https://image.tmdb.org/t/p/w92${clean}`;
+  return `/tmdb-img/t/p/w92${clean}`;
 }
 
 /** Generate a YouTube trailer fallback URL for a given title */
