@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { NavMediaCategory } from "@/components/Navbar";
 import { MostInterestedCard } from "@/components/MostInterested";
 import { PosterImage } from "@/components/PosterImage";
@@ -17,8 +18,10 @@ import {
   tmdbToMediaItem,
   deduplicateFranchises,
   deduplicateMedia,
+  fetchTmdbTrailerUrl,
 } from "@/lib/tmdb";
-import { Check, ChevronDown, Film, Tv, Sparkles, Gamepad2, BookOpen } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Film, Tv, Sparkles, Gamepad2, BookOpen, Play, Shuffle } from "lucide-react";
+import { TrailerModal } from "@/components/TrailerModal";
 import {
   PLATFORMS,
   fetchBalancedFeed,
@@ -91,10 +94,270 @@ function getItemHref(item: MediaItem): string {
   return `/media/external/${type}/${encodeURIComponent(extId)}`;
 }
 
+// ── Homepage Hero: rotating Movie, Series, Anime, Book, Games ─────────────────────────────────
+// TMDB movie + TV genre ids; trending results carry ids only
+const TMDB_GENRES: Record<number, string> = {
+  10759: "Action & Adventure", 10762: "Kids", 10765: "Sci-Fi & Fantasy", 10768: "War & Politics",
+  28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime", 99: "Documentary",
+  18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
+  9648: "Mystery", 10749: "Romance", 878: "Science Fiction", 10770: "TV Movie", 53: "Thriller",
+  10752: "War", 37: "Western",
+};
+
+const HERO_VERDICT_PILL: Record<Verdict, string> = {
+  PERFECTION: "border-purple-500 bg-purple-500/20 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.3)]",
+  GO_FOR_IT: "border-emerald-500 bg-emerald-500/20 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)]",
+  TIMEPASS: "border-amber-500 bg-amber-500/20 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.3)]",
+  SKIP_IT: "border-rose-500 bg-rose-500/20 text-rose-300 shadow-[0_0_15px_rgba(225,29,72,0.3)]",
+};
+
+interface HeroItem extends FeedItem {
+  genres: string[];
+}
+
+/** Soft colour bloom behind the banner; isolate keeps the -z-10 glow above the page background. */
+function HeroGlow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative isolate mb-12">
+      <div
+        aria-hidden="true"
+        className="absolute -inset-4 -z-10 bg-gradient-to-r from-purple-500/20 via-rose-500/20 to-amber-500/20 blur-3xl opacity-60 pointer-events-none rounded-[3rem] transition-all duration-1000"
+      />
+      {children}
+    </div>
+  );
+}
+
+type HeroKind = "MOVIE" | "SERIES" | "ANIME" | "BOOK" | "GAME";
+
+interface HeroSlide {
+  kind: HeroKind;
+  /** null for the Games placeholder slide */
+  item: HeroItem | null;
+  badge: string;
+}
+
+const HERO_KIND_LABEL: Record<HeroKind, string> = { MOVIE: "Movie", SERIES: "Series", ANIME: "Anime", BOOK: "Book", GAME: "Game" };
+const HERO_ROTATE_S = 7;
+
+function HomeHero({
+  slides,
+  loading,
+  onTrailer,
+}: {
+  slides: HeroSlide[];
+  loading: boolean;
+  onTrailer: (item: HeroItem) => void;
+}) {
+  const router = useRouter();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const count = slides.length;
+
+  // The active dot's progress bar is the timer: its animationend advances the slide, and hovering or
+  // focusing inside the banner pauses it (WCAG 2.2.2). Reduced motion turns the animation, and so auto-advance, off.
+  const go = (step: number) => setActiveIndex((i) => (i + step + count) % count);
+
+  if (loading) {
+    return (
+      <HeroGlow>
+        <div className="w-full h-[460px] md:h-[500px] lg:h-[600px] rounded-3xl relative z-10 bg-[#09090b] border border-white/10 animate-pulse" />
+      </HeroGlow>
+    );
+  }
+  if (count === 0) return null;
+
+  const current = Math.min(activeIndex, count - 1);
+  const active = slides[current];
+  const item = active.item;
+  const isGame = active.kind === "GAME";
+  const verdict = item?.voteAverage !== undefined ? voteToVerdict(item.voteAverage) : null;
+  const meta = item
+    ? [HERO_KIND_LABEL[active.kind], item.releaseYear, item.genres.slice(0, 2).join(", ")].filter(Boolean)
+    : [];
+
+  return (
+    <HeroGlow>
+      <section
+        aria-roledescription="carousel"
+        aria-labelledby="home-hero-title"
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onFocus={() => setPaused(true)}
+        onBlur={() => setPaused(false)}
+        // Mouse shortcut only; keyboard and screen-reader users reach the same page through "Read Verdicts"
+        onClick={() => item && !isGame && router.push(getItemHref(item))}
+        className={`group w-full min-h-[460px] md:min-h-0 md:h-[500px] lg:h-[600px] relative z-10 bg-[#09090b] rounded-3xl overflow-hidden flex items-end md:items-center shadow-2xl border border-white/10 transition-transform duration-700 ease-out motion-reduce:transition-none ${
+          isGame ? "" : "cursor-pointer hover:scale-[1.015] motion-reduce:hover:scale-100"
+        }`}
+      >
+        {/* Backgrounds stay mounted and crossfade */}
+        {slides.map((s, i) => {
+          const src = s.item ? s.item.backdropImage || s.item.coverImage : null;
+          return (
+            <div
+              key={s.kind}
+              aria-hidden="true"
+              className={`absolute inset-0 transition-opacity duration-1000 motion-reduce:transition-none ${
+                i === current ? "opacity-100" : "opacity-0"
+              }`}
+            >
+              {src && s.item?.backdropImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={src} alt="" className="w-full h-full object-cover" />
+              ) : src ? (
+                // Book covers are portrait and low-res: a blurred copy fills the banner as ambient colour,
+                // and the cover itself sits sharp on top like a framed book (top-centre on phones, right on desktop)
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt="" className="w-full h-full object-cover blur-2xl scale-110 opacity-50" />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt=""
+                    className="absolute top-6 left-1/2 -translate-x-1/2 h-32 md:top-1/2 md:left-auto md:right-[12%] md:translate-x-0 md:-translate-y-1/2 md:h-[55%] aspect-[2/3] object-cover rounded-xl ring-1 ring-white/15 shadow-[0_24px_50px_rgba(0,0,0,0.6)] -rotate-2"
+                  />
+                </>
+              ) : (
+                // Games has no artwork yet: an abstract mesh of brand purple fading to emerald
+                <div className="absolute inset-0 z-0 bg-zinc-950 bg-radial-[ellipse_at_top_right] from-purple-900/40 via-[#09090b] to-emerald-900/20" />
+              )}
+            </div>
+          );
+        })}
+        <div className="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-950/80 to-transparent z-10" />
+        {/* On phones the text sits at the bottom, so a bottom-up fade carries the contrast */}
+        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent z-10 md:hidden" />
+
+        {/* Phones: the banner grows with its content, and pt-40 leaves the backdrop visible above the text */}
+        <div className="relative z-20 w-full max-w-2xl px-6 pt-40 pb-14 md:py-0 md:px-16 flex flex-col gap-3 md:gap-4">
+          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.08] backdrop-blur-md border border-white/[0.1] text-[10px] md:text-xs font-bold text-white uppercase tracking-widest w-max mb-1 md:mb-2">
+            {active.badge}
+          </span>
+          <h2 id="home-hero-title" className="text-4xl md:text-6xl font-black text-white leading-tight drop-shadow-xl line-clamp-2">
+            {item?.title ?? "Games"}
+          </h2>
+          {meta.length > 0 && (
+            <p className="text-sm text-zinc-300 font-medium flex flex-wrap items-center gap-x-3 gap-y-1">
+              {meta.map((m, i) => (
+                <React.Fragment key={i}>
+                  {i > 0 && <span aria-hidden="true">•</span>}
+                  <span>{m}</span>
+                </React.Fragment>
+              ))}
+            </p>
+          )}
+          {verdict && (
+            <span
+              className={`inline-flex items-center px-4 py-1.5 rounded-full border text-xs font-extrabold uppercase tracking-widest w-max my-1 md:my-2 ${HERO_VERDICT_PILL[verdict]}`}
+              title="Verdict from audience ratings"
+            >
+              {VERDICT_CONFIG[verdict].label}
+            </span>
+          )}
+          {item?.description && (
+            <p className="text-sm md:text-base text-zinc-300 italic leading-relaxed line-clamp-2 max-w-xl">{item.description}</p>
+          )}
+          {item && !isGame && (
+            <div className="flex flex-wrap items-center gap-3 md:gap-4 mt-2 md:mt-4">
+              <Link
+                href={getItemHref(item)}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white text-black hover:bg-zinc-200 px-6 md:px-8 py-3 rounded-full font-bold transition-all transform hover:scale-105 motion-reduce:hover:scale-100 outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+              >
+                Read Verdicts
+              </Link>
+              {active.kind !== "BOOK" && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTrailer(item);
+                  }}
+                  className="bg-white/[0.08] hover:bg-white/[0.15] backdrop-blur-md border border-white/[0.1] text-white px-6 md:px-8 py-3 rounded-full font-bold flex items-center gap-2 transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                >
+                  <Play className="w-4 h-4 fill-current" aria-hidden="true" />
+                  Watch Trailer
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {isGame && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-md rounded-3xl">
+            <span className="px-6 py-3 bg-white/[0.08] border border-white/[0.1] rounded-full text-white font-bold tracking-widest uppercase shadow-2xl backdrop-saturate-150">
+              Games - Coming Soon
+            </span>
+          </div>
+        )}
+
+        {count > 1 &&
+          ([
+            { label: "Previous featured title", step: -1, side: "left-4", Icon: ChevronLeft },
+            { label: "Next featured title", step: 1, side: "right-4", Icon: ChevronRight },
+          ] as const).map(({ label, step, side, Icon }) => (
+            <button
+              key={label}
+              type="button"
+              aria-label={label}
+              onClick={(e) => {
+                e.stopPropagation();
+                go(step);
+              }}
+              className={`absolute ${side} top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/20 backdrop-blur-md border border-white/10 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:bg-black/40 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/60`}
+            >
+              <Icon className="w-5 h-5" aria-hidden="true" />
+            </button>
+          ))}
+
+        {/* Dots sit above the Games overlay so the carousel can always be moved on */}
+        {count > 1 && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3" role="group" aria-label="Choose featured title">
+            {slides.map((s, i) => (
+              <button
+                key={s.kind}
+                type="button"
+                aria-label={`Show featured ${HERO_KIND_LABEL[s.kind]}`}
+                aria-current={i === current ? "true" : undefined}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveIndex(i);
+                }}
+                className={`relative h-2 rounded-full overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 ${
+                  i === current
+                    ? "w-12 bg-white/20 transition-all duration-500 cursor-default"
+                    : "w-2 bg-white/30 hover:bg-white/60 transition-colors cursor-pointer"
+                }`}
+              >
+                {i === current && (
+                  <span
+                    // keyed by slide so the bar restarts from 0 on every change
+                    key={current}
+                    aria-hidden="true"
+                    onAnimationEnd={() => go(1)}
+                    className="absolute top-0 left-0 h-full bg-white motion-reduce:hidden"
+                    style={{
+                      animation: `hero-progress ${HERO_ROTATE_S}s linear forwards`,
+                      animationPlayState: paused ? "paused" : "running",
+                    }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    </HeroGlow>
+  );
+}
+
 // ── Poster Card with Frosted Segmented Verdict Chip ──────────────────────────
 interface FeedItem extends MediaItem {
   voteAverage?: number;
   popularity?: number;
+  /** Overrides the title-page link (fallback books without a Google volume id) */
+  href?: string;
 }
 
 function PosterCard({ item }: { item: FeedItem }) {
@@ -105,14 +368,19 @@ function PosterCard({ item }: { item: FeedItem }) {
   const cfg = VERDICT_CONFIG[verdict];
 
   return (
-    <Link href={getItemHref(item)} className="group block cursor-pointer">
+    <Link href={item.href ?? getItemHref(item)} className="group block cursor-pointer">
       <PosterImage
         url={item.coverImage}
         title={item.title}
         mediaType={item.mediaType}
         releaseYear={item.releaseYear}
-        className="poster-lift"
+        className={`poster-lift ${item.mediaType === "BOOK" ? "shadow-lg" : ""}`}
       >
+        {/* Book covers are often near-white: an inner ring and soft inner shadow, drawn above the image, frame them */}
+        {item.mediaType === "BOOK" && (
+          <div className="absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/10 shadow-[inset_0_0_32px_rgba(0,0,0,0.35)] pointer-events-none z-[1]" />
+        )}
+
         {/* Overlaid Frosted Segmented Verdict Chip */}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
           <span
@@ -153,14 +421,21 @@ function PosterCard({ item }: { item: FeedItem }) {
 }
 
 // ── Landscape Card ("Watch Now") ──────────────────────────────────────────────
-function LandscapeCard({ item }: { item: FeedItem }) {
+/** Thumbnail plays the trailer (onPlay); the "Verdicts" link below opens the title page. */
+function LandscapeCard({ item, onPlay, loading }: { item: FeedItem; onPlay: () => void; loading: boolean }) {
   const [imgErr, setImgErr] = useState(false);
   const backdrop =
     sanitizeBackdropUrl(item.backdropImage) || sanitizeImageUrl(item.coverImage);
 
   return (
-    <Link href={getItemHref(item)} className="group block cursor-pointer">
-      <div className="aspect-video w-full rounded-xl overflow-hidden border border-white/10 relative bg-zinc-900 shadow-sm transition-all duration-300">
+    <div className="group block">
+      <button
+        type="button"
+        onClick={onPlay}
+        aria-label={`Play trailer: ${item.title}`}
+        aria-busy={loading}
+        className="block text-left aspect-video w-full rounded-xl overflow-hidden border border-white/10 relative bg-zinc-900 shadow-sm transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+      >
         {backdrop && !imgErr ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -179,20 +454,37 @@ function LandscapeCard({ item }: { item: FeedItem }) {
         {/* Bottom gradient fade */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent pointer-events-none" />
 
+        {/* Play affordance */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/30 transition-colors pointer-events-none">
+          <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md backdrop-saturate-150 border border-white/30 flex items-center justify-center text-white shadow-lg transform group-hover:scale-110 transition-transform motion-reduce:group-hover:scale-100">
+            {loading ? (
+              <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" aria-hidden="true" />
+            ) : (
+              <Play className="w-4 h-4 ml-0.5 fill-white" aria-hidden="true" />
+            )}
+          </div>
+        </div>
+
         {/* Overlaid Title */}
         <div className="absolute bottom-0 left-0 right-0 p-3.5 pointer-events-none">
           <p className="text-sm font-bold text-white leading-snug line-clamp-1 drop-shadow-sm group-hover:text-violet-300 transition-colors">
             {item.title}
           </p>
         </div>
-      </div>
-      <div className="mt-2 space-y-0.5">
+      </button>
+      <div className="mt-2 flex items-center justify-between gap-2">
         <p className="text-xs text-zinc-500 leading-none">
           {item.mediaType === "SERIES" ? "Series" : "Movie"} &middot;{" "}
           {item.releaseYear || "TBA"}
         </p>
+        <Link
+          href={getItemHref(item)}
+          className="text-xs font-medium text-zinc-400 hover:text-white transition-colors rounded outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        >
+          Verdicts &rarr;
+        </Link>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -219,11 +511,53 @@ function LandscapeSkeleton() {
 }
 
 // ── Poster Shelf (Editor's Pick, Books, Platforms) ───────────────────────────
+/**
+ * Shows `size` items from `pool`; shuffle() swaps in a random set, preferring titles not on screen.
+ * The shuffled set is tied to the pool it came from, so a new pool (e.g. another platform) starts unshuffled.
+ */
+function useShuffle<T>(pool: T[], size: number) {
+  const [shuffled, setShuffled] = useState<{ from: T[]; items: T[] } | null>(null);
+  const visible = (shuffled?.from === pool ? shuffled.items : pool).slice(0, size);
+  const shuffle = () => {
+    const random = (list: T[]) => {
+      const a = [...list];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
+    const unseen = random(pool.filter((x) => !visible.includes(x)));
+    setShuffled({ from: pool, items: [...unseen, ...random(visible)].slice(0, size) });
+  };
+  // With no spare titles (e.g. the 12 fallback books), Shuffle just reorders what is on screen
+  return { visible, shuffle, canShuffle: pool.length > 1 };
+}
+
+function ShuffleButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="group/shuffle shrink-0 bg-white/[0.06] hover:bg-white/[0.10] backdrop-blur-xl border border-white/[0.14] shadow-[inset_0_1px_1px_rgba(255,255,255,0.22)] rounded-full px-3.5 py-2 text-xs font-medium text-white flex items-center gap-2 transition-all cursor-pointer active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+    >
+      <Shuffle className="w-3.5 h-3.5 text-zinc-300 transition-transform duration-300 group-active/shuffle:rotate-180" aria-hidden="true" />
+      Shuffle
+    </button>
+  );
+}
+
 function PosterShelf({
   title,
   items,
   loading,
   skeletonCount = 5,
+  visibleCount,
+  shuffleLabel,
+  fallback,
+  gridClassName = "",
   action,
   emptyText = "Nothing to show right now.",
 }: {
@@ -231,26 +565,42 @@ function PosterShelf({
   items: FeedItem[];
   loading: boolean;
   skeletonCount?: number;
+  /** Titles on screen; with shuffleLabel set and a larger pool, Shuffle swaps in others from it. */
+  visibleCount?: number;
+  shuffleLabel?: string;
+  /** Replaces both the skeletons and the empty state, so a shelf that may fail stays one quiet row. */
+  fallback?: React.ReactNode;
+  gridClassName?: string;
   action?: React.ReactNode;
   emptyText?: string;
 }) {
+  const { visible, shuffle, canShuffle } = useShuffle(items, visibleCount ?? items.length);
+  // Opt-in: only shelves that pass a shuffleLabel get the button
+  const showShuffle = !!shuffleLabel && !!visibleCount && canShuffle && !loading;
   return (
     <section>
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2 min-w-0">
           {title}
         </h2>
-        {action}
+        {(action || showShuffle) && (
+          <div className="flex items-center gap-3">
+            {showShuffle && <ShuffleButton onClick={shuffle} label={shuffleLabel} />}
+            {action}
+          </div>
+        )}
       </div>
-      {loading ? (
-        <div className="catalog-poster-grid">
+      {fallback && (loading || visible.length === 0) ? (
+        fallback
+      ) : loading ? (
+        <div className={`catalog-poster-grid ${gridClassName}`}>
           {Array.from({ length: skeletonCount }).map((_, i) => (
             <PosterSkeleton key={i} />
           ))}
         </div>
-      ) : items.length > 0 ? (
-        <div className="catalog-poster-grid">
-          {items.map((item) => (
+      ) : visible.length > 0 ? (
+        <div className={`catalog-poster-grid ${gridClassName}`}>
+          {visible.map((item) => (
             <PosterCard key={item.id || `${item.mediaType}-${item.externalId}`} item={item} />
           ))}
         </div>
@@ -369,6 +719,8 @@ function PlatformPicker({
 }
 
 // ── Streaming platform shelf: one section, platform picked from a dropdown ───
+// Two rows of six on screen; the rest of the pool feeds Shuffle
+const PLATFORM_POOL = 40;
 function PlatformShelf() {
   const [platformId, setPlatformId] = useState(PLATFORMS[0].id);
   // Results cached per platform so switching back is instant
@@ -379,7 +731,7 @@ function PlatformShelf() {
   useEffect(() => {
     if (cache[platformId]) return;
     let cancelled = false;
-    fetchPlatformShelf(platformId)
+    fetchPlatformShelf(platformId, PLATFORM_POOL)
       .catch(() => [] as FeedItem[])
       .then((result) => {
         if (!cancelled) setCache((c) => ({ ...c, [platformId]: result }));
@@ -399,7 +751,10 @@ function PlatformShelf() {
       }
       items={items ?? []}
       loading={!items}
-      skeletonCount={10}
+      skeletonCount={12}
+      visibleCount={12}
+      shuffleLabel={`Shuffle ${platform.name} titles`}
+      gridClassName="catalog-poster-grid--wide"
       emptyText={`No titles found on ${platform.name} right now.`}
       action={<PlatformPicker platformId={platformId} onChange={setPlatformId} />}
     />
@@ -415,6 +770,24 @@ export default function HomePage() {
   // Data states
   const [posterItems, setPosterItems] = useState<FeedItem[]>([]);
   const [landscapeItems, setLandscapeItems] = useState<FeedItem[]>([]);
+  // Six on screen; the rest of today's trending pool feeds Shuffle
+  const watchNow = useShuffle(landscapeItems, 6);
+  // Watch Now trailer: looked up on click, then played in the modal
+  const [trailer, setTrailer] = useState<{ title: string; url: string | null } | null>(null);
+  const [trailerLoadingKey, setTrailerLoadingKey] = useState<string | null>(null);
+  const playTrailer = async (item: FeedItem, key: string) => {
+    if (trailerLoadingKey) return;
+    setTrailerLoadingKey(key);
+    const url = item.trailerUrl || (item.externalId ? await fetchTmdbTrailerUrl(item.mediaType, item.externalId) : null);
+    setTrailerLoadingKey(null);
+    setTrailer({ title: item.title, url });
+  };
+  // Hero carousel: today's top movie, series and anime (plus a book and the Games placeholder below)
+  const [heroTrending, setHeroTrending] = useState<{ movie: HeroItem | null; series: HeroItem | null; anime: HeroItem | null }>({
+    movie: null,
+    series: null,
+    anime: null,
+  });
 
   // Loading states
   const [postersLoading, setPostersLoading] = useState(true);
@@ -461,9 +834,10 @@ export default function HomePage() {
   const fetchLandscape = useCallback(async () => {
     setLandscapeLoading(true);
     try {
-      const [movies, tvShows] = await Promise.all([
+      const [movies, tvShows, anime] = await Promise.all([
         fetchTrendingMovies(),
         fetchTrendingTv(),
+        fetchTrendingAnime().catch(() => []),
       ]);
 
       const all = [
@@ -471,10 +845,27 @@ export default function HomePage() {
         ...tvShows.map((t) => tmdbToMediaItem(t, "SERIES")),
       ];
 
+      // Top title with a backdrop; anime skips anything already featured as the series
+      const toHero = (list: typeof movies, type: MediaType, skipId?: number): HeroItem | null => {
+        const top = list.find((m) => m.backdrop_path && m.id !== skipId);
+        return top
+          ? {
+              ...tmdbToMediaItem(top, type),
+              genres: ((top as typeof top & { genre_ids?: number[] }).genre_ids ?? []).map((g) => TMDB_GENRES[g]).filter(Boolean),
+            }
+          : null;
+      };
+      const series = toHero(tvShows, "SERIES");
+      setHeroTrending({
+        movie: toHero(movies, "MOVIE"),
+        series,
+        anime: toHero(anime, "ANIME", series ? Number(series.externalId) : undefined),
+      });
+
       const withBackdrops = all.filter((i) => Boolean(i.backdropImage));
       const uniqueBackdrops = deduplicateMedia(withBackdrops);
 
-      setLandscapeItems(uniqueBackdrops.slice(0, 6));
+      setLandscapeItems(uniqueBackdrops);
     } catch (err) {
       console.error("Failed to fetch landscape items", err);
       setLandscapeItems([]);
@@ -509,6 +900,17 @@ export default function HomePage() {
     fetchLandscape();
   }, [fetchLandscape]);
 
+  // Book reuses this week's first "Worth Your Time To Read" pick, so the hero adds no Google Books calls
+  const firstBook = worthReading?.[0];
+  const heroCandidates: (HeroSlide | null | undefined)[] = [
+    heroTrending.movie && { kind: "MOVIE", item: heroTrending.movie, badge: "🔥 #1 Trending Movie Today" },
+    heroTrending.series && { kind: "SERIES", item: heroTrending.series, badge: "📺 #1 Trending Series Today" },
+    heroTrending.anime && { kind: "ANIME", item: heroTrending.anime, badge: "✨ Trending Anime" },
+    firstBook && { kind: "BOOK", item: { ...firstBook, genres: [] }, badge: "📚 Book Of The Week" },
+    { kind: "GAME", item: null, badge: "🎮 Games" },
+  ];
+  const heroSlides = heroCandidates.filter((s): s is HeroSlide => Boolean(s));
+
   const activeCategoryLabel =
     category === "ALL"
       ? "All Media"
@@ -526,6 +928,12 @@ export default function HomePage() {
     <div className="verdikt-app verdikt-catalog min-h-screen">
       {/* Main Layout Wrapper (catalog-content container) */}
       <div className="catalog-content">
+        <HomeHero
+          slides={heroSlides}
+          loading={landscapeLoading}
+          onTrailer={(item) => playTrailer(item, `hero-${item.externalId}`)}
+        />
+
         <div className="catalog-layout">
           {/* ═══════════ LEFT COLUMN (Main Content) ═══════════ */}
           <main className="catalog-main">
@@ -567,57 +975,6 @@ export default function HomePage() {
                 </div>
               )}
             </section>
-
-            {/* ── Editor's Pick Of The Week (rotates weekly) ── */}
-            <PosterShelf
-              title={
-                <>
-                  <span className="text-xl">🤍</span> Editor&apos;s Pick Of The Week
-                </>
-              }
-              items={editorsPicks ?? []}
-              loading={editorsPicks === null}
-            />
-
-            {/* ── Worth Your Time To Read (books across decades, rotates weekly) ── */}
-            <PosterShelf
-              title={
-                <>
-                  <span className="text-xl">📚</span> Worth Your Time To Read
-                </>
-              }
-              items={worthReading ?? []}
-              loading={worthReading === null}
-            />
-
-            {/* ── Streaming platforms (single shelf + dropdown) ── */}
-            <PlatformShelf />
-
-            {/* ── Section B: "📺 Watch Now" (Landscape Banner Shelf) ── */}
-            <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2">
-                  <span className="text-xl">📺</span> Watch Now
-                </h2>
-              </div>
-
-              {landscapeLoading ? (
-                <div className="catalog-watch-grid">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <LandscapeSkeleton key={i} />
-                  ))}
-                </div>
-              ) : landscapeItems.length > 0 ? (
-                <div className="catalog-watch-grid">
-                  {landscapeItems.map((item) => (
-                    <LandscapeCard
-                      key={item.id || `${item.mediaType}-${item.externalId}`}
-                      item={item}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </section>
           </main>
 
           {/* ═══════════ RIGHT COLUMN (Sidebar: Fixed 354px) ═══════════ */}
@@ -628,7 +985,90 @@ export default function HomePage() {
             </div>
           </aside>
         </div>
+
+        {/* Fading rule closes the feed + sidebar area; the shelves below run full width */}
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent my-16" />
+
+        {/* catalog-main keeps the shelf heading styles and the 48px section gap */}
+        <div className="catalog-main w-full">
+          {/* ── Editor's Pick Of The Week: this week's six, fixed until the weekly rotation (no Shuffle, no See All) ── */}
+          <PosterShelf
+            title={
+              <>
+                <span className="text-xl">🤍</span> Editor&apos;s Pick Of The Week
+              </>
+            }
+            items={editorsPicks ?? []}
+            loading={editorsPicks === null}
+            skeletonCount={6}
+            gridClassName="catalog-poster-grid--wide"
+          />
+
+          {/* ── Worth Your Time To Read: one row of six; each Shuffle brings in six not just shown ── */}
+          <PosterShelf
+            title={
+              <>
+                <span className="text-xl">📚</span> Worth Your Time To Read
+              </>
+            }
+            items={worthReading ?? []}
+            loading={worthReading === null}
+            visibleCount={6}
+            shuffleLabel="Shuffle books"
+            gridClassName="catalog-poster-grid--wide"
+            // Shown only while books load; a spent Google Books quota is covered by the fallback catalog
+            fallback={
+              <div className="w-full py-12 flex items-center justify-center border border-white/10 rounded-2xl bg-white/[0.02]">
+                <p className="text-zinc-500 font-medium">Curating top book verdicts — back shortly.</p>
+              </div>
+            }
+          />
+
+          {/* ── Streaming platforms (single shelf + dropdown) ── */}
+          <PlatformShelf />
+
+          {/* ── Section B: "📺 Watch Now" (Landscape Banner Shelf) ── */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2">
+                <span className="text-xl">📺</span> Watch Now
+              </h2>
+              {!landscapeLoading && watchNow.canShuffle && (
+                <ShuffleButton onClick={watchNow.shuffle} label="Shuffle Watch Now" />
+              )}
+            </div>
+
+            {landscapeLoading ? (
+              <div className="catalog-watch-grid">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <LandscapeSkeleton key={i} />
+                ))}
+              </div>
+            ) : watchNow.visible.length > 0 ? (
+              <div className="catalog-watch-grid">
+                {watchNow.visible.map((item) => {
+                  const key = item.id || `${item.mediaType}-${item.externalId}`;
+                  return (
+                    <LandscapeCard
+                      key={key}
+                      item={item}
+                      loading={trailerLoadingKey === key}
+                      onPlay={() => playTrailer(item, key)}
+                    />
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
+        </div>
       </div>
+
+      <TrailerModal
+        isOpen={!!trailer}
+        onClose={() => setTrailer(null)}
+        trailerUrl={trailer?.url ?? null}
+        title={trailer?.title ?? ""}
+      />
     </div>
   );
 }

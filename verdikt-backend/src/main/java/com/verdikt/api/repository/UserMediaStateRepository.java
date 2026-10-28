@@ -19,6 +19,8 @@ public interface UserMediaStateRepository extends JpaRepository<UserMediaState, 
 
     List<UserMediaState> findByUserIdAndWatchLaterTrueOrderByWatchLaterAtDesc(UUID userId);
 
+    List<UserMediaState> findByUserIdAndFavoriteTrueOrderByFavoritedAtDesc(UUID userId);
+
     /** Rows: [mediaId (UUID), interestedCount (Long)] — aggregates only, never user ids. */
     @Query("select s.mediaId, count(s) from UserMediaState s "
             + "where s.watchLater = true and s.watchLaterAt >= :since "

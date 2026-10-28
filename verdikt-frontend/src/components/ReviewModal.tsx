@@ -48,7 +48,8 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
   onSuccess,
 }) => {
   const { user } = useAuth();
-  const [selectedVerdict, setSelectedVerdict] = useState<Verdict>("GO_FOR_IT");
+  // No preset verdict: a default nudges people toward it
+  const [selectedVerdict, setSelectedVerdict] = useState<Verdict | null>(null);
   const [content, setContent] = useState("");
   const [containsSpoilers, setContainsSpoilers] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,6 +61,10 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
     e.preventDefault();
     if (!user) {
       setError("You must be logged in to post a verdict.");
+      return;
+    }
+    if (!selectedVerdict) {
+      setError("Please pick a verdict before submitting.");
       return;
     }
     if (!content.trim()) {
@@ -223,7 +228,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !selectedVerdict}
               className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white text-sm font-semibold py-2.5 px-6 rounded-xl shadow-[0_4px_16px_rgba(139,92,246,0.4),inset_0_1px_1px_rgba(255,255,255,0.2)] transition-all flex items-center justify-center disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60 cursor-pointer disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Submitting..." : "Post Verdict"}

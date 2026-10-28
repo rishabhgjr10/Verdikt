@@ -7,7 +7,8 @@
 .ambient-indigo { top: -100px; right: 6%; width: 560px; height: 360px; background-color: var(--ambient-indigo); animation-duration: 20s; animation-delay: -7s; }
 .ambient-core { top: 10px; left: 38%; width: 260px; height: 120px; background-color: var(--ambient-core); animation-duration: 14s; animation-delay: -9s; animation-direction: alternate-reverse; }
 .ambient-accent { top: 40px; right: 28%; width: 220px; height: 100px; background-color: var(--ambient-accent); animation-duration: 16s; animation-delay: -2s; }
-.shared-navbar { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 50; width: calc(100% - 48px); max-width: 1400px; height: 64px; padding: 0 24px; display: flex; align-items: center; gap: 32px; border-radius: 9999px; border: 1px solid var(--nav-border); background-color: var(--nav-glass); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); box-shadow: var(--nav-shadow); color: var(--nav-text); font-family: var(--font-inter), var(--font-sans); letter-spacing: 0; }
+/* 80% near-black glass keeps the links legible over bright posters scrolling underneath */
+.shared-navbar { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 50; width: calc(100% - 48px); max-width: 1400px; height: 64px; padding: 0 24px; display: flex; align-items: center; gap: 32px; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.1); background-color: rgba(9, 9, 11, 0.8); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); box-shadow: 0 24px 50px rgba(0, 0, 0, 0.8); color: var(--nav-text); font-family: var(--font-inter), var(--font-sans); letter-spacing: 0; }
 .shared-navbar a, .shared-navbar button { outline: none; }
 .shared-navbar a:focus, .shared-navbar button:focus { outline: none; }
 .shared-navbar a:focus-visible, .shared-navbar button:focus-visible { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3); }

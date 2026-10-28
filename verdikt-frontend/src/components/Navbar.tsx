@@ -112,6 +112,12 @@ function settledRect(track: HTMLElement, index: number) {
   return undefined;
 }
 
+// Unsaved search results carry a TMDB id, which /media/[id] can't type; route those through the external importer
+const mediaHref = (item: MediaItem) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id)
+    ? `/media/${item.id}`
+    : `/media/external/${item.mediaType}/${encodeURIComponent(item.externalId || item.id.replace(/^tmdb-/, ""))}`;
+
 const navItemClass = (active: boolean) =>
   `nav-item relative z-10 inline-flex h-9 items-center overflow-hidden rounded-full text-sm select-none cursor-pointer transition-colors duration-200 ${
     active ? "text-white font-medium" : "text-zinc-400 hover:text-white font-medium"
@@ -398,7 +404,7 @@ export function Navbar({
           const item = suggestions[activeIndex];
           persistRecentSearch(item.title);
           closeSearchModal();
-          router.push(`/media/${item.id}`);
+          router.push(mediaHref(item));
         } else if (!isRecentsMode && activeIndex === suggestions.length) {
           executeSearch(query);
         }
@@ -438,10 +444,10 @@ export function Navbar({
       <header
         className="shared-navbar"
         aria-label="Primary Navigation"
+        // Inline because the stylesheet's backdrop-filter doesn't survive the CSS build; colour/border/shadow live in navbar.css
         style={{
           backdropFilter: "blur(28px) saturate(150%)",
           WebkitBackdropFilter: "blur(28px) saturate(150%)",
-          backgroundColor: "rgba(24, 24, 27, 0.40)",
         }}
       >
         {/* FIX 2: Entire logo is clickable link to "/" */}
@@ -857,7 +863,7 @@ export function Navbar({
                           onClick={() => {
                             persistRecentSearch(item.title);
                             closeSearchModal();
-                            router.push(`/media/${item.id}`);
+                            router.push(mediaHref(item));
                           }}
                           className={`flex items-center gap-3 px-4 py-2 text-sm cursor-pointer transition-colors ${
                             activeIndex === idx

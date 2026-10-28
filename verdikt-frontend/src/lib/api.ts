@@ -1,4 +1,5 @@
 import axios from "axios";
+import { resolveSearchAlias } from "@/lib/catalog-navigation";
 import {
   AuthResponse,
   CollectionDetail,
@@ -52,6 +53,7 @@ export const authApi = {
 
 const inFlightExternalImports = new Map<string, Promise<MediaItem>>();
 
+
 export const mediaApi = {
   search: async (
     query: string,
@@ -59,8 +61,9 @@ export const mediaApi = {
     page: number = 1,
     signal?: AbortSignal
   ): Promise<MediaItem[]> => {
+    const finalQuery = resolveSearchAlias(query);
     const response = await api.get<MediaItem[]>("/media/search", {
-      params: { q: query, type: mediaType, page },
+      params: { q: finalQuery, type: mediaType, page },
       signal,
     });
     return response.data;
@@ -133,6 +136,14 @@ export const userMediaApi = {
   },
   setWatchLater: async (mediaId: string, value: boolean): Promise<WatchedResult> => {
     const response = await api.put<WatchedResult>(`/media/${mediaId}/watch-later`, { value });
+    return response.data;
+  },
+  setFavorite: async (mediaId: string, value: boolean): Promise<{ favorite: boolean }> => {
+    const response = await api.put<{ favorite: boolean }>(`/media/${mediaId}/favorite`, { value });
+    return response.data;
+  },
+  getFavorites: async (): Promise<MediaItem[]> => {
+    const response = await api.get<MediaItem[]>("/me/favorites");
     return response.data;
   },
   getWatchLater: async (): Promise<(MediaItem & MediaItemExtras)[]> => {

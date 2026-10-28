@@ -22,6 +22,8 @@ public interface CollectionItemRepository extends JpaRepository<CollectionItem, 
 
     /** Ids of the given user's collections that contain the media item. */
     @Query("select ci.id.collectionId from CollectionItem ci, MediaCollection c "
-            + "where c.id = ci.id.collectionId and c.userId = :userId and ci.id.mediaId = :mediaId")
+            + "where c.id = ci.id.collectionId and c.userId = :userId and ci.id.mediaId = :mediaId "
+            // Newest first: the media page labels its Collections button with the latest collection
+            + "order by ci.addedAt desc")
     List<UUID> findCollectionIdsContaining(@Param("userId") UUID userId, @Param("mediaId") UUID mediaId);
 }

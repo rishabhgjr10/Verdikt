@@ -111,6 +111,7 @@ export interface MediaUserState {
   watchLater: boolean;
   collectionIds: string[];
   hasReview: boolean;
+  favorite: boolean;
 }
 
 export interface WatchedResult {

@@ -15,7 +15,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Per-user watched / watch-later flags for one media item.
+ * Per-user watched / watch-later / favorite flags for one media item.
  * Invariant (enforced in UserMediaService): watched and watchLater are never both true.
  */
 @Entity
@@ -54,6 +54,13 @@ public class UserMediaState {
 
     @Column(name = "watch_later_at")
     private Instant watchLaterAt;
+
+    // Independent of watched/watch-later; the default backfills rows that existed before the column
+    @Column(name = "favorite", nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE")
+    private boolean favorite;
+
+    @Column(name = "favorited_at")
+    private Instant favoritedAt;
 
     public UserMediaState() {
     }
@@ -105,5 +112,21 @@ public class UserMediaState {
 
     public void setWatchLaterAt(Instant watchLaterAt) {
         this.watchLaterAt = watchLaterAt;
+    }
+
+    public boolean isFavorite() {
+        return favorite;
+    }
+
+    public void setFavorite(boolean favorite) {
+        this.favorite = favorite;
+    }
+
+    public Instant getFavoritedAt() {
+        return favoritedAt;
+    }
+
+    public void setFavoritedAt(Instant favoritedAt) {
+        this.favoritedAt = favoritedAt;
     }
 }

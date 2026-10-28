@@ -130,7 +130,7 @@ export function ReviewCard({
   };
 
   return (
-    <article className="bg-zinc-900/50 border border-white/[0.08] rounded-2xl p-5 mb-4">
+    <article className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-2xl p-5 shadow-lg mb-4">
       {/* Header */}
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -138,7 +138,11 @@ export function ReviewCard({
           <div className="min-w-0">
             <p className="font-semibold text-white truncate">
               {review.user?.username || "Verdikt Member"}
-              {isOwner && <span className="ml-2 text-xs font-medium text-zinc-500">You</span>}
+              {isOwner && (
+                <span className="ml-2 align-middle px-1.5 py-0.5 rounded-md bg-white/10 border border-white/10 text-[10px] font-semibold text-zinc-300">
+                  You
+                </span>
+              )}
             </p>
             <p className="text-xs text-zinc-500">
               {review.createdAt ? new Date(review.createdAt).toLocaleDateString() : "Recently"}

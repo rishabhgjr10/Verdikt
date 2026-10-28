@@ -38,6 +38,12 @@
   --animate-ambient-drift: ambient-drift 18s ease-in-out infinite alternate;
 }
 
+/* Homepage hero: the active carousel dot fills over the slide's duration */
+@keyframes hero-progress {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
 @keyframes ambient-drift {
   from { transform: translate3d(-20px, -10px, 0) scale(1); }
   to { transform: translate3d(20px, 20px, 0) scale(1.1); }

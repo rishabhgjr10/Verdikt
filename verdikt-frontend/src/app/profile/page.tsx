@@ -3,8 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Heart, Layers, MessageCircle, User as UserIcon, Users } from "lucide-react";
-import { CollectionSummary, MediaType, ReviewWithRelations, Verdict } from "@/types/media";
-import { collectionsApi, reviewApi } from "@/lib/api";
+import { CollectionSummary, MediaItem, MediaType, ReviewWithRelations, Verdict } from "@/types/media";
+import { collectionsApi, reviewApi, userMediaApi } from "@/lib/api";
 import { SlidingPill } from "@/components/ui/SlidingPill";
 import { verdictOption, VERDICT_OPTIONS } from "@/components/reviews/verdicts";
 import { InstagramIcon, YouTubeIcon } from "@/components/profile/SocialIcons";
@@ -82,11 +82,55 @@ function ProfileReviewCard({ review }: { review: ReviewWithRelations }) {
   );
 }
 
+/** Horizontal row of the titles the user hearted on media pages, newest first. */
+function FavoritesRow({ items }: { items: MediaItem[] | null }) {
+  return (
+    <section aria-labelledby="favorites-title">
+      <h2 id="favorites-title" className="flex items-center gap-2 text-lg font-bold text-white mb-3">
+        <Heart className="w-5 h-5 fill-rose-500 text-rose-500" aria-hidden="true" />
+        Favorites
+      </h2>
+      {items === null ? (
+        <div className="flex gap-4 overflow-hidden">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="w-32 shrink-0 aspect-[2/3] rounded-xl bg-white/[0.04] animate-pulse" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <p className="bg-white/[0.02] border border-white/[0.08] rounded-xl p-6 text-center text-zinc-500 text-sm">
+          No favorites yet. Click the heart icon on any movie or show to add it here.
+        </p>
+      ) : (
+        <ul className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+          {items.map((m) => {
+            const poster = m.coverImage?.replace(/^http:\/\//, "https://");
+            return (
+              <li key={m.id} className="w-32 shrink-0">
+                <Link href={`/media/${m.id}`} className="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-white/40">
+                  <div className="aspect-[2/3] rounded-xl overflow-hidden bg-zinc-800 border border-white/10 group-hover:border-white/20 transition-colors">
+                    {poster && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={poster} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    )}
+                  </div>
+                  <p className="mt-2 text-sm font-medium text-white truncate group-hover:text-violet-300 transition-colors">{m.title}</p>
+                  <p className="text-xs text-zinc-500">{[TYPE_LABELS[m.mediaType], m.releaseYear].filter(Boolean).join(" • ")}</p>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function ProfilePage() {
   const { user } = useSignedInUser();
   const [tab, setTab] = useState<"reviews" | "collections">("reviews");
   const [reviews, setReviews] = useState<ReviewWithRelations[] | null>(null);
   const [collections, setCollections] = useState<CollectionSummary[] | null>(null);
+  const [favorites, setFavorites] = useState<MediaItem[] | null>(null);
   const [verdictFilter, setVerdictFilter] = useState<Verdict | "ALL">("ALL");
   const [typeFilter, setTypeFilter] = useState<MediaType | "ALL">("ALL");
 
@@ -101,6 +145,10 @@ export default function ProfilePage() {
       .list()
       .then((c) => !cancelled && setCollections(c.filter((x) => !x.isSystem)))
       .catch(() => !cancelled && setCollections([]));
+    userMediaApi
+      .getFavorites()
+      .then((f) => !cancelled && setFavorites(f))
+      .catch(() => !cancelled && setFavorites([]));
     return () => {
       cancelled = true;
     };
@@ -247,7 +295,11 @@ export default function ProfilePage() {
             ) : (
               visibleReviews.map((r) => <ProfileReviewCard key={r.id} review={r} />)
             )
-          ) : collections === null ? (
+          ) : (
+            <>
+              <FavoritesRow items={favorites} />
+              <h2 className="text-lg font-bold text-white pt-4">Collections</h2>
+              {collections === null ? (
             [0, 1].map((i) => <div key={i} className={`${GLASS} rounded-2xl h-24 animate-pulse`} />)
           ) : collections.length === 0 ? (
             <div className={`${GLASS} rounded-2xl p-10 text-center`}>
@@ -283,6 +335,8 @@ export default function ProfilePage() {
                 </Link>
               ))}
             </div>
+          )}
+            </>
           )}
         </div>
       </section>

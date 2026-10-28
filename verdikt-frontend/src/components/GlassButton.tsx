@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 
-export type GlassVariant = "primary" | "neutral" | "active" | "danger";
+export type GlassVariant = "primary" | "neutral" | "active" | "danger" | "selected";
 
 const BASE_SHADOW =
   "shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),inset_0_-1px_1px_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.35)]";
@@ -16,6 +16,7 @@ const VARIANTS: Record<GlassVariant, string> = {
   active:
     "bg-emerald-500/80 hover:bg-emerald-500/90 text-white border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),inset_0_-1px_1px_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.35),0_0_24px_rgba(16,185,129,0.35)]",
   danger: `bg-red-500/15 hover:bg-red-500/25 text-red-300 border-red-400/25 ${BASE_SHADOW}`,
+  selected: `bg-violet-500/20 hover:bg-violet-500/30 text-violet-100 border-violet-400/40 ${BASE_SHADOW}`,
 };
 
 /**
@@ -31,6 +32,9 @@ const HERO_VARIANTS: Record<GlassVariant, string> = {
   active:
     "bg-emerald-500/80 hover:bg-emerald-500/90 text-white border-white/20 font-semibold shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_24px_rgba(0,0,0,0.35)]",
   danger: `bg-red-500/15 hover:bg-red-500/25 text-red-300 border-red-400/25 font-semibold ${BASE_SHADOW}`,
+  // A toggle that is on: violet tint so it reads as active, calmer than the primary
+  selected:
+    "bg-violet-500/15 hover:bg-violet-500/25 backdrop-blur-lg border-violet-400/40 text-violet-100 font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
 };
 
 interface CommonProps {

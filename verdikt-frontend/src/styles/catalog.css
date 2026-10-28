@@ -11,14 +11,16 @@
 .catalog-main h2 { font-size: 20px; font-weight: 650; letter-spacing: 0; color: var(--catalog-foreground); }
 .catalog-main h2 > span { font-size: 20px; }
 .catalog-poster-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px 20px; }
+/* Full-width shelves (below the sidebar) fit six; the narrower breakpoints below still apply */
+.catalog-poster-grid--wide { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .catalog-watch-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 20px; }
 .catalog-main section > h2 { margin-bottom: 24px; }
-.catalog-poster-grid > a, .catalog-watch-grid > a { min-width: 0; position: relative; outline-offset: 6px; }
-.catalog-poster-grid > a > div:first-child, .catalog-watch-grid > a > div:first-child {
+.catalog-poster-grid > a, .catalog-watch-grid > * { min-width: 0; position: relative; outline-offset: 6px; }
+.catalog-poster-grid > a > div:first-child, .catalog-watch-grid > * > :first-child {
   border-radius: 18px; border-color: var(--catalog-border); background: var(--catalog-surface);
   box-shadow: var(--catalog-poster-shadow); transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
 }
-.catalog-poster-grid > a > div:last-child, .catalog-watch-grid > a > div:last-child { margin-top: 12px; }
+.catalog-poster-grid > a > div:last-child, .catalog-watch-grid > * > div:last-child { margin-top: 12px; }
 .catalog-poster-grid > a > div:last-child p:first-child { font-size: 13px; font-weight: 550; color: var(--catalog-foreground); letter-spacing: 0; }
 .catalog-main a > div:last-child > p:last-child { color: var(--catalog-muted); line-height: 1.5; margin-top: 3px; }
 .catalog-sidebar { min-width: 0; }
@@ -41,7 +43,7 @@
 .catalog-interested p:first-child { font-size: 12px; letter-spacing: 0; }
 .catalog-interested p:not(:first-child), .catalog-interested a div span { font-size: 10px; color: var(--catalog-muted); }
 @media (hover: hover) {
-  .catalog-poster-grid > a:hover > div:first-child, .catalog-watch-grid > a:hover > div:first-child { transform: translateY(-4px) scale(1.025); border-color: var(--catalog-accent); box-shadow: var(--catalog-poster-hover-shadow); }
+  .catalog-poster-grid > a:hover > div:first-child, .catalog-watch-grid > *:hover > :first-child { transform: translateY(-4px) scale(1.025); border-color: var(--catalog-accent); box-shadow: var(--catalog-poster-hover-shadow); }
   .catalog-poster-grid > a:hover > div:last-child p:first-child { color: var(--catalog-accent); }
   .catalog-radar > div:nth-child(2) > a:hover { background: var(--catalog-soft); }
 }
@@ -64,12 +66,12 @@
   .catalog-main section > div:first-child { flex-wrap: wrap; gap: 10px; }
   .catalog-main section > div:first-child > div:first-child { gap: 7px; }
   .catalog-main section > div:first-child > span { display: none; }
-  .catalog-poster-grid > a > div:first-child, .catalog-watch-grid > a > div:first-child { border-radius: 14px; }
+  .catalog-poster-grid > a > div:first-child, .catalog-watch-grid > * > :first-child { border-radius: 14px; }
 }
 @media (max-width: 479px) { .catalog-poster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 14px; } }
 @media (prefers-reduced-motion: reduce) {
   .verdikt-catalog *, .verdikt-catalog *::before, .verdikt-catalog *::after { animation: none; transition: none; }
-  .catalog-poster-grid > a:hover > div:first-child, .catalog-watch-grid > a:hover > div:first-child { transform: none; }
+  .catalog-poster-grid > a:hover > div:first-child, .catalog-watch-grid > *:hover > :first-child { transform: none; }
 }
 /* Poster cards: spring lift on hover/keyboard focus of the card link (.group) */
 .poster-lift { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); transition: transform 300ms cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 300ms ease, opacity 200ms ease; }

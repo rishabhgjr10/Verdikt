@@ -8,5 +8,8 @@ export const SITE = {
   legalName: "Verdikt.",
   supportEmail: "rishabhgjr10@gmail.com",
   businessEmail: "rishabhgjr10@gmail.com",
+  /** Footer social links */
+  github: "https://github.com/rishabhgjr10/Verdikt",
+  linkedin: "https://www.linkedin.com/in/rishabhgjr/",
   lastUpdated: { terms: "28 October 2026", privacy: "28 October 2026" },
 } as const;

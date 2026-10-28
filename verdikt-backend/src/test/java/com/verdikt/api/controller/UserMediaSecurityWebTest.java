@@ -80,8 +80,11 @@ class UserMediaSecurityWebTest {
                 .andExpect(status().isUnauthorized());
         mvc.perform(put("/api/media/{id}/watch-later", mediaId).contentType(MediaType.APPLICATION_JSON).content("{\"value\":true}"))
                 .andExpect(status().isUnauthorized());
+        mvc.perform(put("/api/media/{id}/favorite", mediaId).contentType(MediaType.APPLICATION_JSON).content("{\"value\":true}"))
+                .andExpect(status().isUnauthorized());
         mvc.perform(get("/api/collections")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/me/watch-later")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/me/favorites")).andExpect(status().isUnauthorized());
     }
 
     @Test

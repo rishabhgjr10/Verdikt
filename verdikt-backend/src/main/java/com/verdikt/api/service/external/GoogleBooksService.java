@@ -10,12 +10,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class GoogleBooksService {
@@ -32,6 +35,37 @@ public class GoogleBooksService {
 
     public GoogleBooksService(WebClient webClient) {
         this.webClient = webClient;
+    }
+
+    // Google Books allows 1,000 queries a day per key, and the homepage alone fires dozens, so identical
+    // requests are answered from memory for CACHE_TTL. Failures (e.g. 429 quota) are never cached.
+    // shortcut: unbounded growth is capped by clearing at CACHE_MAX_ENTRIES; swap for Caffeine if traffic grows
+    private static final Duration CACHE_TTL = Duration.ofHours(24);
+    private static final int CACHE_MAX_ENTRIES = 2000;
+    private record CachedResponse(JsonNode body, Instant fetchedAt) {
+    }
+    private final ConcurrentHashMap<String, CachedResponse> responseCache = new ConcurrentHashMap<>();
+
+    /** GET a Google Books URI as JSON via the cache; empty on any error, logged with `what`. */
+    private Mono<JsonNode> cachedGet(String uri, String what) {
+        CachedResponse hit = responseCache.get(uri);
+        if (hit != null && hit.fetchedAt().plus(CACHE_TTL).isAfter(Instant.now())) {
+            return Mono.just(hit.body());
+        }
+        return webClient.get()
+                .uri(uri)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .doOnNext(body -> {
+                    if (responseCache.size() >= CACHE_MAX_ENTRIES) {
+                        responseCache.clear();
+                    }
+                    responseCache.put(uri, new CachedResponse(body, Instant.now()));
+                })
+                .onErrorResume(e -> {
+                    log.error("Error {}: {}", what, e.getMessage());
+                    return Mono.empty();
+                });
     }
 
     public List<MediaItemDTO> searchBooks(String query) {
@@ -53,15 +87,7 @@ public class GoogleBooksService {
                 uri += "&key=" + apiKey;
             }
 
-            JsonNode response = webClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .onErrorResume(e -> {
-                        log.error("Error searching Google Books: {}", e.getMessage());
-                        return Mono.empty();
-                    })
-                    .block();
+            JsonNode response = cachedGet(uri, "searching Google Books").block();
 
             if (response == null || !response.has("items")) {
                 return Collections.emptyList();
@@ -92,14 +118,8 @@ public class GoogleBooksService {
         int startIndex = (page - 1) * CURATED_PER_QUERY;
         List<String> flat = CURATED_QUERIES.stream().flatMap(List::stream).toList();
         List<Mono<JsonNode>> calls = flat.stream()
-                .map(q -> webClient.get()
-                        .uri(volumesUri(q, CURATED_PER_QUERY, startIndex) + "&orderBy=relevance&printType=books")
-                        .retrieve()
-                        .bodyToMono(JsonNode.class)
-                        .onErrorResume(e -> {
-                            log.error("Error searching Google Books ({}): {}", q, e.getMessage());
-                            return Mono.empty();
-                        })
+                .map(q -> cachedGet(volumesUri(q, CURATED_PER_QUERY, startIndex) + "&orderBy=relevance&printType=books",
+                                "searching Google Books (" + q + ")")
                         .defaultIfEmpty(com.fasterxml.jackson.databind.node.MissingNode.getInstance()))
                 .toList();
         List<Object> responses;
@@ -182,15 +202,7 @@ public class GoogleBooksService {
                 uri += "?key=" + apiKey;
             }
 
-            JsonNode node = webClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .onErrorResume(e -> {
-                        log.error("Error fetching Google Books volume details: {}", e.getMessage());
-                        return Mono.empty();
-                    })
-                    .block();
+            JsonNode node = cachedGet(uri, "fetching Google Books volume details").block();
 
             if (node == null) {
                 return null;

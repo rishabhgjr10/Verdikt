@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { Bookmark, Check, Clock, Eye } from "lucide-react";
+import { Bookmark, Check, Clock, Eye, Flame, Loader2 } from "lucide-react";
 import { GlassButton } from "@/components/GlassButton";
 import { GlassConfirmDialog } from "@/components/GlassConfirmDialog";
 import { CollectionsSheet } from "@/components/CollectionsSheet";
@@ -20,9 +20,22 @@ export interface MediaActionsProps {
   mediaType?: MediaType;
   /** Called after a confirmed unwatch so the page can drop the user's verdict immediately. */
   onUnwatched?: (deletedReview: boolean) => void;
+  /** Write/Edit verdict button: last when unwatched, moved up under the primary once watched. */
+  verdictAction?: React.ReactNode;
+  /** Not out yet: no Mark as Watched or verdict, only Watch Later and Collections */
+  unreleased?: boolean;
+  /** Collection membership changed in the sheet, so the page's save button can update */
+  onCollectionsChange?: (collectionIds: string[]) => void;
+  /** Name of the member's most recently used collection holding this title; shown on the Collections button */
+  collectionLabel?: string;
+  /** Watched state changed here, so the page (e.g. the franchise progress rail) can update */
+  onWatchedChange?: (watched: boolean) => void;
 }
 
-const EMPTY_STATE: MediaUserState = { watched: false, watchLater: false, collectionIds: [], hasReview: false };
+const PRIMARY_BASE =
+  "w-full py-3 rounded-xl text-white flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
+
+const EMPTY_STATE: MediaUserState = { watched: false, watchLater: false, collectionIds: [], hasReview: false, favorite: false };
 
 const LABELS = {
   default: { done: "Watched", mark: "Mark as Watched", undo: "Unwatch", later: "Watch Later", history: "Watch History", content: "Content" },
@@ -33,7 +46,17 @@ const LABELS = {
  * Watched / Watch Later / Collections actions for one title. Toggles are optimistic
  * with rollback; unwatch waits for the server because it can delete the user's verdict.
  */
-export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: MediaActionsProps) {
+export function MediaActions({
+  mediaId,
+  mediaTitle,
+  mediaType,
+  onUnwatched,
+  verdictAction,
+  unreleased = false,
+  onCollectionsChange,
+  collectionLabel,
+  onWatchedChange,
+}: MediaActionsProps) {
   const t = mediaType === "BOOK" ? LABELS.book : LABELS.default;
   const { user, isLoading: authLoading, logout } = useAuth();
   const { showToast } = useToast();
@@ -85,6 +108,7 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
       setBusy("watched");
       try {
         await userMediaApi.setWatched(mediaId, true);
+        onWatchedChange?.(true);
         showToast(`Added to ${t.history}`);
       } catch (err) {
         setState(previous);
@@ -113,10 +137,33 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
       }
     });
 
+  const toggleInterested = () =>
+    requireAuth(async () => {
+      if (busy) return;
+      const previous = state;
+      const next = !state.watchLater;
+      setState({ ...state, watchLater: next });
+      setBusy("later");
+      try {
+        await userMediaApi.setWatchLater(mediaId, next);
+        showToast(
+          next ? "Marked as Interested" : "Removed from Interested",
+          next ? { detail: `It's in your ${t.later} list.` } : undefined
+        );
+      } catch (err) {
+        setState(previous);
+        if (handleExpired(err)) return;
+        showToast("Couldn't update Interested", { tone: "error", detail: "Please try again." });
+      } finally {
+        setBusy(null);
+      }
+    });
+
   const confirmUnwatch = async () => {
     setUnwatching(true);
     try {
       const result = await userMediaApi.setWatched(mediaId, false);
+      onWatchedChange?.(false);
       const deletedReview = !!result.deletedReview;
       setState((s) => ({ ...s, watched: false, watchLater: result.watchLater, hasReview: false }));
       setConfirmOpen(false);
@@ -140,37 +187,72 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
   return (
     // Layout only: fills its column (poster width in the hero); 12px between rows and halves.
     <div className="w-full flex flex-col gap-3" aria-busy={pendingState || undefined}>
-      {state.watched ? (
-        <GlassButton
-          variant="active"
-          size="hero"
-          block
-          icon={<Check />}
+      {unreleased ? (
+        // Saved: calm orange tint, and hovering offers the way back out
+        <button
+          type="button"
+          onClick={toggleInterested}
+          disabled={pendingState || busy === "later"}
+          aria-pressed={state.watchLater}
+          aria-label={state.watchLater ? "Interested. Activate to unmark" : "Mark as Interested"}
+          className={`group/int ${PRIMARY_BASE} font-semibold ${
+            state.watchLater
+              ? "bg-orange-500/15 border border-orange-400/40 text-orange-200 hover:bg-rose-500/20 hover:border-rose-400/40"
+              : "bg-gradient-to-r from-orange-500 to-rose-500 shadow-lg hover:brightness-110"
+          }`}
+        >
+          {busy === "later" ? (
+            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+          ) : state.watchLater ? (
+            <Check className="w-4 h-4" aria-hidden="true" />
+          ) : (
+            <Flame className="w-4 h-4" aria-hidden="true" />
+          )}
+          {state.watchLater ? (
+            <>
+              <span className="group-hover/int:hidden group-focus-visible/int:hidden">Interested</span>
+              <span className="hidden group-hover/int:inline group-focus-visible/int:inline">Unmark as Interested?</span>
+            </>
+          ) : (
+            "Mark as Interested"
+          )}
+        </button>
+      ) : state.watched ? (
+        <button
+          type="button"
           onClick={() => requireAuth(() => setConfirmOpen(true))}
           aria-label={`${t.done}. Activate to ${t.undo.toLowerCase()}`}
           disabled={pendingState}
+          className={`${PRIMARY_BASE} bg-emerald-600 hover:bg-emerald-500 font-semibold`}
         >
+          <Check className="w-4 h-4" aria-hidden="true" />
           {t.done}
-        </GlassButton>
+        </button>
       ) : (
-        <GlassButton
-          variant="primary"
-          size="hero"
-          block
-          icon={<Eye />}
+        <button
+          type="button"
           onClick={markWatched}
-          loading={busy === "watched"}
-          disabled={pendingState}
+          disabled={pendingState || busy === "watched"}
+          aria-busy={busy === "watched" || undefined}
+          className={`${PRIMARY_BASE} bg-gradient-to-r from-purple-600 to-indigo-600 font-medium shadow-lg hover:brightness-110`}
         >
+          {busy === "watched" ? (
+            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Eye className="w-4 h-4" aria-hidden="true" />
+          )}
           {t.mark}
-        </GlassButton>
+        </button>
       )}
 
+      {/* Seen it: reviewing becomes the next step, so the verdict button moves up */}
+      {!unreleased && state.watched && verdictAction}
+
       {/* Two equal halves ((width - 12px) / 2); Watch Later is hidden once watched */}
-      <div className={state.watched ? "grid grid-cols-1" : "grid grid-cols-2 gap-3"}>
-        {!state.watched && (
+      <div className={state.watched || unreleased ? "grid grid-cols-1" : "grid grid-cols-2 gap-3"}>
+        {!state.watched && !unreleased && (
           <GlassButton
-            variant="neutral"
+            variant={state.watchLater ? "selected" : "neutral"}
             size="hero"
             block
             className={half}
@@ -183,8 +265,8 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
           >
             {state.watchLater ? (
               <>
-                {/* "In" only fits the phone layout's wider halves; the check icon marks the state elsewhere */}
-                <span className="sm:hidden">In&nbsp;</span>{t.later}
+                {/* "In" fits the phone and desktop halves; the 104px tablet halves rely on the tint and check */}
+                <span className="sm:hidden lg:inline">In&nbsp;</span>{t.later}
               </>
             ) : (
               t.later
@@ -192,18 +274,24 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
           </GlassButton>
         )}
         <GlassButton
-          variant="neutral"
+          variant={collectionLabel ? "selected" : "neutral"}
           size="hero"
           block
-          className={state.watched ? "" : half}
-          icon={<Bookmark />}
+          className={state.watched || unreleased ? "" : half}
+          icon={<Bookmark className={collectionLabel ? "fill-current" : ""} />}
           onClick={() => requireAuth(() => setSheetOpen(true))}
           disabled={pendingState}
-          aria-label="Add to Collections"
+          aria-label={collectionLabel ? `Saved in ${collectionLabel}. Manage collections` : "Add to Collections"}
+          title={collectionLabel ? `Saved in ${collectionLabel}` : undefined}
         >
-          {state.watched ? "Add to Collections" : "Collections"}
+          {/* min-w-0 + truncate: long collection names end in an ellipsis inside the button */}
+          <span className="min-w-0 truncate">
+            {collectionLabel ?? (state.watched || unreleased ? "Add to Collections" : "Collections")}
+          </span>
         </GlassButton>
       </div>
+
+      {!unreleased && !state.watched && verdictAction}
 
       <GlassConfirmDialog
         open={confirmOpen}
@@ -224,7 +312,10 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
           mediaTitle={mediaTitle}
           watched={state.watched}
           collectionIds={state.collectionIds}
-          onCollectionsChange={(ids) => setState((s) => ({ ...s, collectionIds: ids }))}
+          onCollectionsChange={(ids) => {
+            setState((s) => ({ ...s, collectionIds: ids }));
+            onCollectionsChange?.(ids);
+          }}
         />
       )}
     </div>

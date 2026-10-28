@@ -48,7 +48,7 @@ public class SecurityConfig {
                         .requestMatchers("/auth/**", "/api/auth/**", "/api/v1/auth/**").permitAll()
 
                         // Per-user media state, library and collections (must precede the public media rule)
-                        .requestMatchers("/api/media/*/me", "/api/media/*/watched", "/api/media/*/watch-later").authenticated()
+                        .requestMatchers("/api/media/*/me", "/api/media/*/watched", "/api/media/*/watch-later", "/api/media/*/favorite").authenticated()
                         .requestMatchers("/api/me/**", "/api/collections", "/api/collections/**").authenticated()
 
                         // Media endpoints (search, catalog, external) - permit public access

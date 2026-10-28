@@ -25,7 +25,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Per-user watched / watch-later state and the system "Watch History" collection.
+ * Per-user watched / watch-later / favorite state and the system "Watch History" collection.
  */
 @Service
 public class UserMediaService {
@@ -51,7 +51,7 @@ public class UserMediaService {
         this.userRepository = userRepository;
     }
 
-    public record MediaUserState(boolean watched, boolean watchLater, List<UUID> collectionIds, boolean hasReview) {
+    public record MediaUserState(boolean watched, boolean watchLater, List<UUID> collectionIds, boolean hasReview, boolean favorite) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -59,6 +59,9 @@ public class UserMediaService {
     }
 
     public record WatchLaterResult(boolean watched, boolean watchLater) {
+    }
+
+    public record FavoriteResult(boolean favorite) {
     }
 
     @Transactional(readOnly = true)
@@ -70,7 +73,8 @@ public class UserMediaService {
                 state != null && state.isWatched(),
                 state != null && state.isWatchLater(),
                 collectionItemRepository.findCollectionIdsContaining(userId, mediaId),
-                reviewRepository.existsByUserIdAndMediaItemId(userId, mediaId));
+                reviewRepository.existsByUserIdAndMediaItemId(userId, mediaId),
+                state != null && state.isFavorite());
     }
 
     /**
@@ -144,10 +148,38 @@ public class UserMediaService {
         return new WatchLaterResult(state.isWatched(), state.isWatchLater());
     }
 
+    /** Idempotent; favoritedAt keeps the first time the title was favorited. */
+    @Transactional
+    public FavoriteResult setFavorite(String username, UUID mediaId, boolean value) {
+        UUID userId = requireUserId(username);
+        requireMedia(mediaId);
+        UserMediaState state = stateRepository.findByUserIdAndMediaId(userId, mediaId)
+                .orElseGet(() -> new UserMediaState(userId, mediaId));
+        if (value && !state.isFavorite()) {
+            state.setFavoritedAt(Instant.now());
+        } else if (!value) {
+            state.setFavoritedAt(null);
+        }
+        state.setFavorite(value);
+        stateRepository.save(state);
+        return new FavoriteResult(state.isFavorite());
+    }
+
     @Transactional(readOnly = true)
     public List<MediaItemDTO> getWatchLater(String username) {
         UUID userId = requireUserId(username);
-        List<UUID> ids = stateRepository.findByUserIdAndWatchLaterTrueOrderByWatchLaterAtDesc(userId).stream()
+        return toMediaInOrder(stateRepository.findByUserIdAndWatchLaterTrueOrderByWatchLaterAtDesc(userId));
+    }
+
+    /** The user's Favorites list, most recently favorited first. */
+    @Transactional(readOnly = true)
+    public List<MediaItemDTO> getFavorites(String username) {
+        UUID userId = requireUserId(username);
+        return toMediaInOrder(stateRepository.findByUserIdAndFavoriteTrueOrderByFavoritedAtDesc(userId));
+    }
+
+    private List<MediaItemDTO> toMediaInOrder(List<UserMediaState> states) {
+        List<UUID> ids = states.stream()
                 .map(UserMediaState::getMediaId)
                 .toList();
         Map<UUID, MediaItemDTO> byId = mediaItemRepository.findAllById(ids).stream()

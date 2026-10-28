@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useId, useState } from "react";
-import { EyeOff } from "lucide-react";
 import { MediaItem, ReviewWithRelations, User, Verdict } from "@/types/media";
 import { reviewApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -18,7 +17,10 @@ export function ReviewComposer({
   review,
   onSaved,
   onCancel,
+  id,
 }: {
+  /** Lets the page scroll to and focus the composer instead of opening the modal */
+  id?: string;
   mediaItem: MediaItem;
   user: User;
   review?: ReviewWithRelations;
@@ -27,7 +29,8 @@ export function ReviewComposer({
 }) {
   const editing = !!review;
   const { showToast } = useToast();
-  const [verdict, setVerdict] = useState<Verdict>(review?.verdict ?? "GO_FOR_IT");
+  // No preset verdict for a new review: a default nudges people toward it
+  const [verdict, setVerdict] = useState<Verdict | null>(review?.verdict ?? null);
   const [content, setContent] = useState(review?.content ?? "");
   const [containsSpoilers, setContainsSpoilers] = useState(review?.containsSpoilers ?? false);
   const [allowComments, setAllowComments] = useState(review?.allowComments ?? true);
@@ -36,7 +39,7 @@ export function ReviewComposer({
   const ids = useId();
 
   const reset = () => {
-    setVerdict("GO_FOR_IT");
+    setVerdict(null);
     setContent("");
     setContainsSpoilers(false);
     setAllowComments(true);
@@ -45,6 +48,10 @@ export function ReviewComposer({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!verdict) {
+      setError("Pick a verdict before posting.");
+      return;
+    }
     if (!content.trim()) {
       setError("Write a few words before posting.");
       return;
@@ -71,7 +78,7 @@ export function ReviewComposer({
   };
 
   return (
-    <form onSubmit={submit} className="bg-zinc-900/50 border border-white/[0.08] rounded-2xl p-5">
+    <form id={id} onSubmit={submit} className="bg-zinc-900/50 border border-white/[0.08] rounded-2xl p-5 scroll-mt-28">
       {/* User + integrated rating selector */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -152,16 +159,29 @@ export function ReviewComposer({
             </span>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={containsSpoilers}
-              onChange={(e) => setContainsSpoilers(e.target.checked)}
-              className="w-4 h-4 rounded accent-purple-500 cursor-pointer"
-            />
-            <EyeOff className={`w-4 h-4 ${containsSpoilers ? "text-purple-400" : "text-zinc-500"}`} aria-hidden="true" />
-            Contains spoilers
-          </label>
+          {/* Same switch as Allow comments; amber marks a spoiler warning */}
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={containsSpoilers}
+              aria-labelledby={`${ids}-spoilers`}
+              onClick={() => setContainsSpoilers(!containsSpoilers)}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 cursor-pointer ${
+                containsSpoilers ? "bg-amber-500" : "bg-zinc-700"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                  containsSpoilers ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+            <span id={`${ids}-spoilers`} className="text-sm text-zinc-300">
+              Contains spoilers
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-4 ml-auto">
@@ -174,7 +194,8 @@ export function ReviewComposer({
           </button>
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || !verdict}
+            title={verdict ? undefined : "Pick a verdict first"}
             className="bg-white text-black hover:bg-zinc-200 px-6 py-2 rounded-full font-semibold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 cursor-pointer"
           >
             {saving ? (editing ? "Updating…" : "Posting…") : editing ? "Update" : "Post"}

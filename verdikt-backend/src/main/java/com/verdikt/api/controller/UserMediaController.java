@@ -64,9 +64,21 @@ public class UserMediaController {
         return userMediaService.setWatchLater(user.getUsername(), id, body.required());
     }
 
+    @PutMapping("/media/{id}/favorite")
+    public UserMediaService.FavoriteResult setFavorite(@PathVariable UUID id,
+                                                       @RequestBody ToggleRequest body,
+                                                       @AuthenticationPrincipal UserDetails user) {
+        return userMediaService.setFavorite(user.getUsername(), id, body.required());
+    }
+
     @GetMapping("/me/watch-later")
     public List<MediaItemDTO> getWatchLater(@AuthenticationPrincipal UserDetails user) {
         return userMediaService.getWatchLater(user.getUsername());
+    }
+
+    @GetMapping("/me/favorites")
+    public List<MediaItemDTO> getFavorites(@AuthenticationPrincipal UserDetails user) {
+        return userMediaService.getFavorites(user.getUsername());
     }
 
     @GetMapping("/media/most-interested")

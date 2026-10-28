@@ -45,12 +45,29 @@ export function getRelevanceScore(title: string, q: string): number {
   return 10;
 }
 
+// TMDB has no fuzzy matching, so common Indian acronyms are expanded to the full title before searching
+const SEARCH_ALIASES: Record<string, string> = {
+  tmkoc: "Taarak Mehta Ka Ooltah Chashmah",
+  bb: "Bigg Boss",
+  kgf: "K.G.F",
+  ddlj: "Dilwale Dulhania Le Jayenge",
+  k3g: "Kabhi Khushi Kabhie Gham",
+  kkhh: "Kuch Kuch Hota Hai",
+  znmd: "Zindagi Na Milegi Dobara",
+  yjhd: "Yeh Jawaani Hai Deewani",
+  gow: "Gangs of Wasseypur",
+  bmcm: "Bade Miyan Chote Miyan",
+};
+
+/** Expands a known acronym ("tmkoc") to the full title; any other query is returned unchanged. */
+export const resolveSearchAlias = (query: string) => SEARCH_ALIASES[query.toLowerCase().trim()] || query;
+
 export function rankAndFilterSearchResults<T extends { title?: string; releaseYear?: number | string | null }>(
   items: T[],
   query: string
 ): T[] {
   if (!query || !query.trim()) return items;
-  const q = query.trim().toLowerCase();
+  const q = resolveSearchAlias(query).trim().toLowerCase();
   const qWords = q.split(/\s+/).filter(Boolean);
 
   const filtered = items.filter((item) => {

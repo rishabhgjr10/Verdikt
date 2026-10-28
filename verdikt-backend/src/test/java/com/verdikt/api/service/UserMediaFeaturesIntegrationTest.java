@@ -8,6 +8,7 @@ import com.verdikt.api.Review;
 import com.verdikt.api.User;
 import com.verdikt.api.UserMediaState;
 import com.verdikt.api.Verdict;
+import com.verdikt.api.dto.MediaItemDTO;
 import com.verdikt.api.exception.ConflictException;
 import com.verdikt.api.exception.ForbiddenException;
 import com.verdikt.api.exception.ResourceNotFoundException;
@@ -138,6 +139,36 @@ class UserMediaFeaturesIntegrationTest {
         userMediaService.setWatchLater("alice", dune.getId(), false);
         userMediaService.setWatchLater("alice", dune.getId(), false);
         assertThat(userMediaService.getState("alice", dune.getId()).watchLater()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Favorite toggles independently of watched / Watch Later and is idempotent")
+    void favoriteIsIndependentAndIdempotent() {
+        userMediaService.setWatchLater("alice", dune.getId(), true);
+        assertThat(userMediaService.setFavorite("alice", dune.getId(), true).favorite()).isTrue();
+        Instant firstAt = stateRepository.findByUserIdAndMediaId(alice.getId(), dune.getId()).orElseThrow().getFavoritedAt();
+        userMediaService.setFavorite("alice", dune.getId(), true);
+
+        UserMediaState state = stateRepository.findByUserIdAndMediaId(alice.getId(), dune.getId()).orElseThrow();
+        assertThat(state.getFavoritedAt()).isEqualTo(firstAt);
+        assertThat(state.isWatchLater()).isTrue();
+        assertThat(stateRepository.count()).isEqualTo(1);
+        assertThat(userMediaService.getState("alice", dune.getId()).favorite()).isTrue();
+        assertThat(userMediaService.getState("bob", dune.getId()).favorite()).isFalse();
+
+        userMediaService.setWatched("alice", dune.getId(), true);
+        assertThat(userMediaService.getState("alice", dune.getId()).favorite()).isTrue();
+
+        userMediaService.setFavorite("alice", arcane.getId(), true);
+        assertThat(userMediaService.getFavorites("alice")).extracting(MediaItemDTO::getId)
+                .containsExactly(arcane.getId(), dune.getId());
+        assertThat(userMediaService.getFavorites("bob")).isEmpty();
+
+        userMediaService.setFavorite("alice", dune.getId(), false);
+        assertThat(userMediaService.getFavorites("alice")).extracting(MediaItemDTO::getId).containsExactly(arcane.getId());
+        UserMediaState cleared = stateRepository.findByUserIdAndMediaId(alice.getId(), dune.getId()).orElseThrow();
+        assertThat(cleared.isFavorite()).isFalse();
+        assertThat(cleared.getFavoritedAt()).isNull();
     }
 
     @Test

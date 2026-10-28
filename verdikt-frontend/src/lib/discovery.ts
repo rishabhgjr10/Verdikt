@@ -19,10 +19,17 @@ import {
   tmdbToMediaItem,
 } from "@/lib/tmdb";
 
-export type DiscoveryItem = MediaItem & { voteAverage?: number; popularity?: number };
+export type DiscoveryItem = MediaItem & {
+  voteAverage?: number;
+  popularity?: number;
+  /** Overrides the card's link, for fallback books that have no Google volume id */
+  href?: string;
+};
 
 const FEED_SIZE = 10;
-const SHELF_SIZE = 5;
+/** Editor's Pick and Worth Your Time To Read now run full width, six per row */
+const EDITORS_WEEKLY = 6;
+const BOOKS_SHOWN = 6;
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
@@ -72,6 +79,12 @@ export function weekIndex(now = new Date()): number {
 function weeklySlice<T>(pool: T[], count: number, week = weekIndex()): T[] {
   const start = (week * count) % pool.length;
   return Array.from({ length: Math.min(count, pool.length) }, (_, i) => pool[(start + i) % pool.length]);
+}
+
+/** The whole pool, rotated so this week's slice of `count` comes first (the rest feeds Shuffle). */
+function weeklyRotation<T>(pool: T[], count: number): T[] {
+  const start = (weekIndex() * count) % pool.length;
+  return [...pool.slice(start), ...pool.slice(0, start)];
 }
 
 // ── Books via the existing Google Books integration ──────────────────────────
@@ -134,10 +147,90 @@ const WORTH_READING: BookSeed[] = [
   { title: "Project Hail Mary", author: "Andy Weir", year: 2021 },
   { title: "Midnight's Children", author: "Salman Rushdie", year: 1981 },
   { title: "To Kill a Mockingbird", author: "Harper Lee", year: 1960 },
+  { title: "The Alchemist", author: "Paulo Coelho", year: 1988 },
+  { title: "The White Tiger", author: "Aravind Adiga", year: 2008 },
+  { title: "Sapiens", author: "Yuval Noah Harari", year: 2011 },
+  { title: "The Immortals of Meluha", author: "Amish", year: 2010, aliases: ["immortals of meluha"] },
+  { title: "Atomic Habits", author: "James Clear", year: 2018 },
+  { title: "Train to Pakistan", author: "Khushwant Singh", year: 1956 },
+  { title: "Tomorrow, and Tomorrow, and Tomorrow", author: "Gabrielle Zevin", year: 2022 },
+  { title: "The Palace of Illusions", author: "Chitra Banerjee Divakaruni", year: 2008 },
 ];
 
-export function fetchWorthReadingBooks(): Promise<DiscoveryItem[]> {
-  return resolveBooks(weeklySlice(WORTH_READING, SHELF_SIZE));
+const fallbackBook = (externalId: string, title: string, author: string, year: number, genre: string): DiscoveryItem => ({
+  id: `book-${externalId}`,
+  externalId,
+  mediaType: "BOOK",
+  title,
+  releaseYear: year,
+  // Google's cover image server is separate from the Books API, so these load even when its quota is spent
+  coverImage: `https://books.google.com/books/content?id=${externalId}&printsec=frontcover&img=1&zoom=1`,
+  backdropImage: null,
+  description: null,
+  trailerUrl: null,
+  creatorsJson: [author],
+  genresJson: [genre],
+  platformsJson: null,
+});
+
+/** Fallback book with no known Google volume id: Open Library cover by ISBN, card links to a book search. */
+const fallbackIsbnBook = (isbn: string, title: string, author: string, year: number, genre: string): DiscoveryItem => ({
+  id: `isbn-${isbn}`,
+  externalId: `isbn-${isbn}`,
+  mediaType: "BOOK",
+  title,
+  releaseYear: year,
+  coverImage: `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`,
+  backdropImage: null,
+  description: null,
+  trailerUrl: null,
+  creatorsJson: [author],
+  genresJson: [genre],
+  platformsJson: null,
+  href: `/search?q=${encodeURIComponent(title)}&type=BOOK`,
+});
+
+/**
+ * Shown when Google Books can't resolve the weekly picks (its 1,000-a-day quota runs out). The Google ids are
+ * real volumes already imported locally, so those cards open their book page.
+ * shortcut: the ISBN entries link to a book search instead, since their Google ids couldn't be looked up while
+ * the quota was spent; swap in volume ids once the API answers again.
+ */
+const FALLBACK_BOOKS: DiscoveryItem[] = [
+  fallbackIsbnBook("9780062315007", "The Alchemist", "Paulo Coelho", 1988, "Fiction"),
+  fallbackIsbnBook("9780593135204", "Project Hail Mary", "Andy Weir", 2021, "Science Fiction"),
+  fallbackIsbnBook("9780062316097", "Sapiens", "Yuval Noah Harari", 2011, "History"),
+  fallbackIsbnBook("9780735211292", "Atomic Habits", "James Clear", 2018, "Self-Help"),
+  fallbackIsbnBook("9780061120084", "To Kill a Mockingbird", "Harper Lee", 1960, "Classics"),
+  fallbackIsbnBook("9780812979657", "The God of Small Things", "Arundhati Roy", 1997, "Literary Fiction"),
+  fallbackIsbnBook("9780812976533", "Midnight's Children", "Salman Rushdie", 1981, "Literary Fiction"),
+  fallbackBook("kotPYEqx7kMC", "1984", "George Orwell", 1949, "Classics"),
+  fallbackBook("B1hSG45JCX4C", "Dune", "Frank Herbert", 1965, "Science Fiction"),
+  fallbackBook("agMWBAAAQBAJ", "Sacred Games", "Vikram Chandra", 2006, "Crime"),
+  fallbackBook("bzuRAQAACAAJ", "मुसाफ़िर cafe", "Divya Prakash Dubey", 2016, "Hindi Fiction"),
+  fallbackBook("EP-gEAAAQBAJ", "Fourth Wing", "Rebecca Yarros", 2023, "Fantasy"),
+];
+
+function randomOrder<T>(list: T[]): T[] {
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * All picks, this week's six first; the homepage shows six and each Shuffle brings in six others.
+ * Too few resolved (quota spent or Google down) -> topped up from FALLBACK_BOOKS, in random order,
+ * so the shelf never empties.
+ */
+export async function fetchWorthReadingBooks(): Promise<DiscoveryItem[]> {
+  const live = await resolveBooks(weeklyRotation(WORTH_READING, BOOKS_SHOWN));
+  if (live.length >= BOOKS_SHOWN) return live;
+  console.warn("Google Books unavailable; using the local fallback catalog for Worth Your Time To Read.");
+  const shown = new Set(live.map((b) => normalize(b.title)));
+  return [...live, ...randomOrder(FALLBACK_BOOKS.filter((b) => !shown.has(normalize(b.title))))];
 }
 
 // ── Editor's Pick Of The Week ────────────────────────────────────────────────
@@ -163,8 +256,9 @@ const EDITORS_PICKS: TitleSeed[] = [
   { title: "Pather Panchali", kind: "movie", year: 1955, type: "MOVIE" },
 ];
 
+/** This week's six picks; the set changes each week. */
 export async function fetchEditorsPicks(): Promise<DiscoveryItem[]> {
-  const seeds = weeklySlice(EDITORS_PICKS, SHELF_SIZE);
+  const seeds = weeklySlice(EDITORS_PICKS, EDITORS_WEEKLY);
   const found = await Promise.all(seeds.map((s) => searchTmdbTitle(s.kind, s.title, s.year)));
   return found.flatMap((item, i) => (item ? toItems([item], seeds[i].type) : []));
 }

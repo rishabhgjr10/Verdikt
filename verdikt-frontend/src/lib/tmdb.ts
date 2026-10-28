@@ -22,6 +22,10 @@ export interface TmdbItem {
   popularity?: number;
   media_type?: string;
   overview?: string;
+  /** Movie details only (minutes) */
+  runtime?: number | null;
+  /** Movie details only, e.g. "Released", "In Production", "Post Production", "Planned" */
+  status?: string;
   belongs_to_collection?: {
     id: number;
     name: string;
@@ -277,6 +281,106 @@ export async function fetchTmdbMovieDetails(tmdbId: string | number): Promise<Tm
   }
 }
 
+export interface TmdbCrewCredit {
+  name: string;
+  job: string;
+}
+
+export interface TmdbCastCredit {
+  id: number;
+  name: string;
+  character: string;
+  profileUrl: string | null;
+}
+
+export interface TmdbHeroDetails {
+  tagline: string | null;
+  /** TMDB audience score (0-10), the fallback for the consensus verdict when no member has reviewed */
+  voteAverage: number | null;
+  /** Billed order, up to 12 */
+  cast: TmdbCastCredit[];
+  ageRating: string | null;
+  releaseDate: string | null;
+  runtimeMinutes: number | null;
+  crew: TmdbCrewCredit[];
+  backdrops: string[];
+  belongs_to_collection: TmdbItem["belongs_to_collection"];
+}
+
+const CREW_JOBS = ["Director", "Screenplay", "Writer", "Story"];
+
+/**
+ * Movie or TV details with credits, age ratings and backdrops in one request.
+ * Age rating prefers India, then US. Returns null on failure.
+ */
+export async function fetchTmdbHeroDetails(
+  type: MediaType,
+  tmdbId: string | number
+): Promise<TmdbHeroDetails | null> {
+  const isTv = type === "SERIES" || type === "ANIME";
+  try {
+    // Text-free (null) backdrops first so the slideshow has no burned-in titles
+    const res = await fetch(
+      `${TMDB_BASE_URL}/${isTv ? "tv" : "movie"}/${tmdbId}?api_key=${TMDB_API_KEY}&language=en-US` +
+        `&append_to_response=credits,release_dates,content_ratings,images&include_image_language=null,en`
+    );
+    if (!res.ok) return null;
+    const d = await res.json();
+
+    let ageRating: string | null = null;
+    for (const region of ["IN", "US"]) {
+      if (isTv) {
+        ageRating = d.content_ratings?.results?.find((r: { iso_3166_1: string }) => r.iso_3166_1 === region)?.rating || null;
+      } else {
+        const dates: { certification: string }[] =
+          d.release_dates?.results?.find((r: { iso_3166_1: string }) => r.iso_3166_1 === region)?.release_dates || [];
+        ageRating = dates.find((x) => x.certification)?.certification || null;
+      }
+      if (ageRating) break;
+    }
+
+    // One entry per person, jobs merged ("Director, Writer"), in CREW_JOBS order
+    const byName = new Map<string, string[]>();
+    for (const job of CREW_JOBS) {
+      for (const c of (d.credits?.crew || []) as TmdbCrewCredit[]) {
+        if (c.job !== job) continue;
+        const jobs = byName.get(c.name) || [];
+        if (!jobs.includes(job)) byName.set(c.name, [...jobs, job]);
+      }
+    }
+    const crew = [...byName].slice(0, 6).map(([name, jobs]) => ({ name, job: jobs.join(", ") }));
+
+    const backdrops = ((d.images?.backdrops || []) as { file_path: string; iso_639_1: string | null }[])
+      .sort((a, b) => Number(a.iso_639_1 !== null) - Number(b.iso_639_1 !== null))
+      .slice(0, 3)
+      .map((b) => `https://image.tmdb.org/t/p/w1280${b.file_path}`);
+
+    const cast = ((d.credits?.cast || []) as { id: number; name: string; character?: string; profile_path: string | null }[])
+      .slice(0, 12)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        character: c.character || "",
+        profileUrl: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : null,
+      }));
+
+    return {
+      tagline: d.tagline || null,
+      voteAverage: d.vote_count ? d.vote_average : null,
+      cast,
+      ageRating,
+      releaseDate: (isTv ? d.first_air_date : d.release_date) || null,
+      runtimeMinutes: (isTv ? d.episode_run_time?.[0] : d.runtime) || null,
+      crew,
+      backdrops,
+      belongs_to_collection: d.belongs_to_collection ?? null,
+    };
+  } catch (err) {
+    console.error(`Failed to fetch hero details for ${tmdbId}`, err);
+    return null;
+  }
+}
+
 /**
  * Fetch complete franchise/collection details with all timeline parts.
  */
@@ -317,7 +421,31 @@ export async function fetchTmdbRecommendations(
   }
 }
 
-export type WatchOffer = "flatrate" | "free" | "ads" | "rent" | "buy";
+/**
+ * YouTube trailer for a movie or TV show: official trailer first, then any trailer, then a teaser.
+ * Returns null when TMDB lists none or the request fails.
+ */
+export async function fetchTmdbTrailerUrl(type: MediaType, tmdbId: string | number): Promise<string | null> {
+  try {
+    const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
+    const res = await fetch(`${TMDB_BASE_URL}/${endpoint}/${tmdbId}/videos?api_key=${TMDB_API_KEY}&language=en-US`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const videos: { site: string; type: string; official: boolean; key: string }[] = (data.results || []).filter(
+      (v: { site: string }) => v.site === "YouTube"
+    );
+    const pick =
+      videos.find((v) => v.type === "Trailer" && v.official) ||
+      videos.find((v) => v.type === "Trailer") ||
+      videos.find((v) => v.type === "Teaser");
+    return pick ? `https://www.youtube.com/watch?v=${pick.key}` : null;
+  } catch (err) {
+    console.error(`Failed to fetch trailer for ${tmdbId}`, err);
+    return null;
+  }
+}
+
+export type WatchOffer ="flatrate" | "free" | "ads" | "rent" | "buy";
 
 export interface TmdbWatchProvider {
   provider_id: number;
