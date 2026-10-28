@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { useRouter } from "next/navigation";
 import { Bookmark, Check, Clock, Eye } from "lucide-react";
 import { GlassButton } from "@/components/GlassButton";
 import { GlassConfirmDialog } from "@/components/GlassConfirmDialog";
 import { CollectionsSheet } from "@/components/CollectionsSheet";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { useRequireAuth } from "@/lib/auth-redirect";
+import { buildAuthHref, useRequireAuth } from "@/lib/auth-redirect";
 import { userMediaApi } from "@/lib/api";
 import { MediaType, MediaUserState } from "@/types/media";
 
@@ -33,9 +35,19 @@ const LABELS = {
  */
 export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: MediaActionsProps) {
   const t = mediaType === "BOOK" ? LABELS.book : LABELS.default;
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, logout } = useAuth();
   const { showToast } = useToast();
   const requireAuth = useRequireAuth();
+  const router = useRouter();
+
+  // The stored user outlives its 24h JWT, so a 401 means the session expired: sign out and send to login.
+  const handleExpired = (err: unknown) => {
+    if (!axios.isAxiosError(err) || err.response?.status !== 401) return false;
+    logout();
+    showToast("Session expired", { tone: "error", detail: "Please sign in again." });
+    router.push(buildAuthHref("/login"));
+    return true;
+  };
   const [state, setState] = useState<MediaUserState>(EMPTY_STATE);
   const [stateLoaded, setStateLoaded] = useState(false);
   const [busy, setBusy] = useState<"watched" | "later" | null>(null);
@@ -52,8 +64,10 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
       .then((s) => {
         if (!cancelled) setState(s);
       })
-      .catch(() => {
-        /* keep defaults; actions still work */
+      .catch((err) => {
+        // Expired token: drop the stale session quietly so the buttons route to login on click
+        if (axios.isAxiosError(err) && err.response?.status === 401) logout();
+        /* otherwise keep defaults; actions still work */
       })
       .finally(() => {
         if (!cancelled) setStateLoaded(true);
@@ -61,7 +75,7 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
     return () => {
       cancelled = true;
     };
-  }, [mediaId, user, authLoading]);
+  }, [mediaId, user, authLoading, logout]);
 
   const markWatched = () =>
     requireAuth(async () => {
@@ -72,8 +86,9 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
       try {
         await userMediaApi.setWatched(mediaId, true);
         showToast(`Added to ${t.history}`);
-      } catch {
+      } catch (err) {
         setState(previous);
+        if (handleExpired(err)) return;
         showToast(`Couldn't ${t.mark.toLowerCase()}`, { tone: "error", detail: "Please try again." });
       } finally {
         setBusy(null);
@@ -89,8 +104,9 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
       setBusy("later");
       try {
         await userMediaApi.setWatchLater(mediaId, next);
-      } catch {
+      } catch (err) {
         setState(previous);
+        if (handleExpired(err)) return;
         showToast(`Couldn't update ${t.later}`, { tone: "error", detail: "Please try again." });
       } finally {
         setBusy(null);
@@ -106,8 +122,9 @@ export function MediaActions({ mediaId, mediaTitle, mediaType, onUnwatched }: Me
       setConfirmOpen(false);
       onUnwatched?.(deletedReview);
       showToast(`Removed from ${t.history}`, deletedReview ? { detail: "Your review was deleted" } : undefined);
-    } catch {
+    } catch (err) {
       setConfirmOpen(false);
+      if (handleExpired(err)) return;
       showToast(`Couldn't ${t.undo.toLowerCase()}`, { tone: "error", detail: "Nothing was changed. Please try again." });
     } finally {
       setUnwatching(false);

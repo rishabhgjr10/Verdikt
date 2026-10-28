@@ -111,7 +111,7 @@ function PosterCard({ item }: { item: FeedItem }) {
         title={item.title}
         mediaType={item.mediaType}
         releaseYear={item.releaseYear}
-        className="shadow-sm"
+        className="poster-lift"
       >
         {/* Overlaid Frosted Segmented Verdict Chip */}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
@@ -263,75 +263,28 @@ function PosterShelf({
   );
 }
 
-// ── Platform brand icons (inline SVG, always render) ─────────────────────────
-const PLATFORM_TILE: Record<number, string> = {
-  8: "#E50914",
-  122: "linear-gradient(135deg, #0f1026, #2563eb, #db2777)",
-  119: "#00A8E1",
-  283: "#F47521",
-  237: "linear-gradient(135deg, #3b0764, #4f46e5)",
-  350: "#18181b",
+// ── Platform brand icons (local logo files in /public/Svg) ──────────────────
+// Netflix and Apple TV are transparent wordmarks with dark fills, so they sit on white to stay visible
+const PLATFORM_LOGOS: Record<number, { src: string; wordmark?: boolean }> = {
+  8: { src: "/Svg/netflix.svg", wordmark: true },
+  122: { src: "/Svg/jiohotstar.webp" },
+  119: { src: "/Svg/prime-video.webp" },
+  283: { src: "/Svg/crunchyroll.webp" },
+  237: { src: "/Svg/sonyliv.png" },
+  350: { src: "/Svg/apple-tv.svg", wordmark: true },
 };
 
-function PlatformGlyph({ id }: { id: number }) {
-  switch (id) {
-    case 8: // Netflix "N"
-      return (
-        <svg viewBox="0 0 24 24" className="w-[62%] h-[62%]" aria-hidden="true">
-          <path d="M6 3h4l4 10V3h4v18h-4L10 11v10H6z" fill="#fff" />
-        </svg>
-      );
-    case 122: // JioHotstar spark
-      return (
-        <svg viewBox="0 0 24 24" className="w-[66%] h-[66%]" aria-hidden="true">
-          <path d="M12 2l2.6 6.4L21 11l-6.4 2.6L12 20l-2.6-6.4L3 11l6.4-2.6z" fill="#fff" />
-        </svg>
-      );
-    case 119: // Prime smile arrow
-      return (
-        <svg viewBox="0 0 24 24" className="w-[70%] h-[70%]" aria-hidden="true">
-          <text x="12" y="13" textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff" fontFamily="Arial, sans-serif">prime</text>
-          <path d="M5 16c4 3 10 3 14 0" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" />
-          <path d="M17 14.6l2.2 1.5-2.4 1.1" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      );
-    case 283: // Crunchyroll swirl
-      return (
-        <svg viewBox="0 0 24 24" className="w-[72%] h-[72%]" aria-hidden="true">
-          <circle cx="12" cy="12" r="8.5" fill="none" stroke="#fff" strokeWidth="2.4" strokeDasharray="42 12" strokeLinecap="round" />
-          <circle cx="13.5" cy="12" r="3.6" fill="#fff" />
-        </svg>
-      );
-    case 237: // Sony LIV
-      return (
-        <svg viewBox="0 0 24 24" className="w-[74%] h-[74%]" aria-hidden="true">
-          <text x="12" y="15.5" textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff" fontFamily="Arial, sans-serif">LIV</text>
-          <circle cx="12" cy="6" r="1.6" fill="#a5b4fc" />
-        </svg>
-      );
-    default: // Apple TV+
-      return (
-        <svg viewBox="0 0 24 24" className="w-[72%] h-[72%]" aria-hidden="true">
-          <path
-            d="M9.2 8.2c.6-.7 1-1.6.9-2.5-.9 0-1.9.6-2.5 1.3-.5.6-1 1.5-.8 2.4.9.1 1.8-.5 2.4-1.2zm.4 1.2c-1.3-.1-2.4.7-3 .7-.6 0-1.6-.7-2.6-.7C2.7 9.4 1.5 10.2.9 11.4c-1.300 2.300-.3 5.700.9 7.500.6.900 1.300 1.900 2.300 1.900.9 0 1.300-.6 2.400-.6s1.400.6 2.400.6 1.600-.9 2.200-1.800c.7-1 1-2 1-2.100-.1 0-1.900-.7-1.900-2.800 0-1.700 1.400-2.500 1.500-2.600-.8-1.200-2.100-1.300-2.500-1.300z"
-            fill="#fff"
-            transform="translate(0.5 -2.5) scale(0.62)"
-          />
-          <text x="16.2" y="14.2" textAnchor="middle" fontSize="6.2" fontWeight="700" fill="#fff" fontFamily="Arial, sans-serif">tv</text>
-        </svg>
-      );
-  }
-}
-
 function PlatformIcon({ id, className }: { id: number; className: string }) {
+  const logo = PLATFORM_LOGOS[id];
+  if (!logo) return null;
   return (
-    <span
-      className={`${className} inline-flex items-center justify-center shrink-0 overflow-hidden border border-white/10`}
-      style={{ background: PLATFORM_TILE[id] ?? "#18181b" }}
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={logo.src}
+      alt=""
       aria-hidden="true"
-    >
-      <PlatformGlyph id={id} />
-    </span>
+      className={`${className} object-contain shrink-0 ${logo.wordmark ? "bg-white p-px" : ""}`}
+    />
   );
 }
 
@@ -373,7 +326,7 @@ function PlatformPicker({
         onClick={() => setOpen((o) => !o)}
         className="bg-white/[0.06] hover:bg-white/[0.10] backdrop-blur-xl saturate-150 border border-white/[0.14] shadow-[inset_0_1px_1px_rgba(255,255,255,0.22),0_8px_20px_rgba(0,0,0,0.4)] rounded-full px-3.5 py-2 text-xs font-medium text-white flex items-center gap-2.5 transition-all cursor-pointer"
       >
-        <PlatformIcon id={active.id} className="w-4 h-4 rounded" />
+        <PlatformIcon id={active.id} className="w-4 h-4 rounded-sm" />
         <span>{active.name}</span>
         <ChevronDown
           className={`w-3.5 h-3.5 text-zinc-300 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
@@ -402,7 +355,7 @@ function PlatformPicker({
                 }`}
               >
                 <span className="flex items-center gap-2.5">
-                  <PlatformIcon id={p.id} className="w-4 h-4 rounded" />
+                  <PlatformIcon id={p.id} className="w-4 h-4 rounded-sm" />
                   {p.name}
                 </span>
                 {selected && <Check className="w-3.5 h-3.5 text-violet-300" aria-hidden="true" />}

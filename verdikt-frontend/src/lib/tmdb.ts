@@ -317,6 +317,46 @@ export async function fetchTmdbRecommendations(
   }
 }
 
+export type WatchOffer = "flatrate" | "free" | "ads" | "rent" | "buy";
+
+export interface TmdbWatchProvider {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+  offer: WatchOffer;
+}
+
+/**
+ * India (IN) watch providers for a movie or TV show, one entry per provider,
+ * streaming offers (flatrate, free, ads) before rent/buy. Returns null on failure.
+ */
+export async function fetchTmdbWatchProvidersIN(
+  type: MediaType,
+  tmdbId: string | number
+): Promise<TmdbWatchProvider[] | null> {
+  try {
+    const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
+    const res = await fetch(`${TMDB_BASE_URL}/${endpoint}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const inProviders = data.results?.IN;
+    if (!inProviders) return [];
+    const seen = new Set<number>();
+    const out: TmdbWatchProvider[] = [];
+    for (const offer of ["flatrate", "free", "ads", "rent", "buy"] as WatchOffer[]) {
+      for (const p of inProviders[offer] || []) {
+        if (seen.has(p.provider_id)) continue;
+        seen.add(p.provider_id);
+        out.push({ provider_id: p.provider_id, provider_name: p.provider_name, logo_path: p.logo_path, offer });
+      }
+    }
+    return out;
+  } catch (err) {
+    console.error(`Failed to fetch watch providers for ${tmdbId}`, err);
+    return null;
+  }
+}
+
 // ── Discovery helpers (homepage shelves) ─────────────────────────────────────
 
 type TmdbParams = Record<string, string | number | boolean>;

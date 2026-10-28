@@ -12,6 +12,7 @@ import {
   MediaUserState,
   MostInterestedItem,
   RatingSource,
+  ReviewComment,
   ReviewWithRelations,
   WatchedResult,
 } from "@/types/media";
@@ -101,6 +102,22 @@ export const reviewApi = {
   },
   getByUserId: async (userId: string): Promise<ReviewWithRelations[]> => {
     const response = await api.get<ReviewWithRelations[]>(`/reviews/user/${userId}`);
+    return response.data;
+  },
+  /** Owner-only; likes and comments are removed with it. */
+  delete: async (reviewId: string): Promise<void> => {
+    await api.delete(`/reviews/${reviewId}`);
+  },
+  toggleLike: async (reviewId: string): Promise<{ liked: boolean; likeCount: number }> => {
+    const response = await api.post<{ liked: boolean; likeCount: number }>(`/reviews/${reviewId}/like`);
+    return response.data;
+  },
+  getComments: async (reviewId: string): Promise<ReviewComment[]> => {
+    const response = await api.get<ReviewComment[]>(`/reviews/${reviewId}/comments`);
+    return response.data;
+  },
+  addComment: async (reviewId: string, text: string): Promise<ReviewComment> => {
+    const response = await api.post<ReviewComment>(`/reviews/${reviewId}/comments`, { text });
     return response.data;
   },
 };

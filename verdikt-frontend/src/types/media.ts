@@ -30,6 +30,18 @@ export interface Review {
 export interface ReviewWithRelations extends Review {
   user?: UserSummary;
   mediaItem?: MediaItem;
+  allowComments?: boolean;
+  likeCount?: number;
+  commentCount?: number;
+  likedByMe?: boolean;
+}
+
+export interface ReviewComment {
+  id: string;
+  reviewId: string;
+  user: UserSummary;
+  text: string;
+  createdAt: string;
 }
 
 export interface UserSummary {
@@ -66,6 +78,8 @@ export interface CreateReviewPayload {
   verdict: Verdict;
   content: string;
   containsSpoilers: boolean;
+  /** Omit to keep the review's current setting (new reviews default to true). */
+  allowComments?: boolean;
   mediaDetails?: MediaItem;
 }
 

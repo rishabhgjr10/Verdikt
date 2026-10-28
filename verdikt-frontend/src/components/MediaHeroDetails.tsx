@@ -71,7 +71,7 @@ export function ExpandableDescription({ text, ...rest }: { text: string } & Reac
       <p
         id={textId}
         ref={ref}
-        className={`text-[15px] leading-7 text-zinc-200 max-w-[62ch] ${expanded ? "" : "line-clamp-4"}`}
+        className={`text-[15px] leading-relaxed text-zinc-300 max-w-[62ch] ${expanded ? "" : "line-clamp-4"}`}
       >
         {stripHtml(text)}
       </p>

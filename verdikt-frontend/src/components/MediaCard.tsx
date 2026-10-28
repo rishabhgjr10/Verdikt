@@ -74,7 +74,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
         title={item.title}
         mediaType={item.mediaType}
         releaseYear={item.releaseYear}
-        className="shadow-sm"
+        className="poster-lift"
       >
         {/* Overlaid Frosted Glass Verdict Chip */}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">

@@ -4,7 +4,7 @@ import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { CalendarCheck, Calendar, CalendarClock, Megaphone } from "lucide-react";
-import { GlidePill, useGlider } from "@/components/Navbar";
+import { SlidingPill } from "@/components/ui/SlidingPill";
 import { PosterImage } from "@/components/PosterImage";
 import { mediaApi } from "@/lib/api";
 import { todayInIndia } from "@/lib/schedule-dates";
@@ -120,8 +120,6 @@ function ScheduleView() {
     window.history.replaceState(null, "", `?${next}`);
   };
 
-  const { track: sideTrack, item: sideItem, ...sideGlide } = useGlider<HTMLDivElement>();
-  const { track: pillTrack, item: pillItem, ...pillGlide } = useGlider<HTMLDivElement>();
   const groups = useMemo(() => (entries ? groupByDate(entries) : []), [entries]);
   const today = todayInIndia();
 
@@ -130,83 +128,26 @@ function ScheduleView() {
       <div className="flex flex-col md:flex-row gap-6 md:gap-10">
         {/* Timeline sidebar */}
         <aside className="md:w-52 md:flex-shrink-0">
-          <div
-            ref={sideTrack}
-            role="tablist"
-            aria-label="Timeline"
-            className="relative flex md:flex-col gap-1 overflow-x-auto md:overflow-visible md:sticky md:top-28 [scrollbar-width:none]"
-            onMouseLeave={() => sideGlide.setHover(null)}
-          >
-            <GlidePill
-              box
-              glide={sideGlide}
-              index={sideGlide.hover}
-              className="bg-white/[0.06] border border-white/[0.08]"
-            />
-            <GlidePill
-              box
-              glide={sideGlide}
-              index={TIMELINES.findIndex((t) => t.key === timeline)}
-              className="bg-gradient-to-r from-violet-600/90 to-purple-600/90 border border-purple-400/40 shadow-[0_0_20px_rgba(139,92,246,0.35)]"
-            />
-            {TIMELINES.map(({ key, label, icon: Icon }, i) => (
-              <button
-                key={key}
-                ref={sideItem(i)}
-                type="button"
-                role="tab"
-                aria-selected={timeline === key}
-                onMouseEnter={() => sideGlide.setHover(i)}
-                onClick={() => setParam("tab", key)}
-                className={`relative z-10 flex flex-shrink-0 items-center gap-3 rounded-full px-4 py-2.5 text-sm cursor-pointer select-none transition-colors duration-200 ${
-                  timeline === key ? "text-white font-semibold" : "text-zinc-400 hover:text-white font-medium"
-                }`}
-              >
-                <Icon className="h-[18px] w-[18px]" />
-                {label}
-              </button>
-            ))}
-          </div>
+          <SlidingPill
+            ariaLabel="Timeline"
+            className="md:flex-col md:overflow-visible md:sticky md:top-28"
+            items={TIMELINES.map(({ key, label, icon }) => ({ value: key, label, icon }))}
+            activeValue={timeline}
+            onChange={(key) => setParam("tab", key)}
+          />
         </aside>
 
         {/* Main column */}
         <main className="flex-1 min-w-0">
           <div className="mb-6 flex items-end justify-between gap-4">
             <h1 className="text-2xl font-bold tracking-tight text-white">Schedule</h1>
-            <div
-              ref={pillTrack}
-              role="tablist"
-              aria-label="Media type"
-              className="relative flex items-center gap-1 overflow-x-auto [scrollbar-width:none]"
-              onMouseLeave={() => pillGlide.setHover(null)}
-            >
-              <GlidePill
-                glide={pillGlide}
-                index={pillGlide.hover}
-                className="inset-y-0 bg-white/[0.08] border border-white/[0.12]"
-              />
-              <GlidePill
-                glide={pillGlide}
-                index={MEDIA_FILTERS.findIndex((f) => f.key === filter)}
-                className="inset-y-0 bg-violet-500/20 border border-violet-400/30 shadow-[0_0_14px_rgba(139,92,246,0.25)]"
-              />
-              {MEDIA_FILTERS.map(({ key, label }, i) => (
-                <button
-                  key={key}
-                  ref={pillItem(i)}
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === key}
-                  onMouseEnter={() => pillGlide.setHover(i)}
-                  onClick={() => setParam("type", key)}
-                  className={`relative z-10 flex-shrink-0 rounded-full px-3.5 py-1.5 text-sm cursor-pointer select-none transition-colors duration-200 ${
-                    filter === key ? "text-white font-semibold" : "text-zinc-300/90 hover:text-white font-medium"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SlidingPill
+              variant="filter"
+              ariaLabel="Media type"
+              items={MEDIA_FILTERS.map(({ key, label }) => ({ value: key, label }))}
+              activeValue={filter}
+              onChange={(key) => setParam("type", key)}
+            />
           </div>
 
           {!entries ? (
@@ -246,7 +187,7 @@ function ScheduleView() {
                           title={item.title}
                           mediaType={item.type}
                           releaseYear={item.date.slice(0, 4)}
-                          className="shadow-sm"
+                          className="poster-lift"
                         >
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 pointer-events-none" />
                         </PosterImage>

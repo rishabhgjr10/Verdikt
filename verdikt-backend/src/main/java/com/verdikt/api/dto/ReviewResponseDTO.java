@@ -18,8 +18,44 @@ public class ReviewResponseDTO {
     private boolean containsSpoilers;
     private Instant createdAt;
     private String formattedCreatedAt;
+    private boolean allowComments = true;
+    private long likeCount;
+    private long commentCount;
+    private boolean likedByMe;
 
     public ReviewResponseDTO() {
+    }
+
+    public boolean isAllowComments() {
+        return allowComments;
+    }
+
+    public void setAllowComments(boolean allowComments) {
+        this.allowComments = allowComments;
+    }
+
+    public long getLikeCount() {
+        return likeCount;
+    }
+
+    public void setLikeCount(long likeCount) {
+        this.likeCount = likeCount;
+    }
+
+    public long getCommentCount() {
+        return commentCount;
+    }
+
+    public void setCommentCount(long commentCount) {
+        this.commentCount = commentCount;
+    }
+
+    public boolean isLikedByMe() {
+        return likedByMe;
+    }
+
+    public void setLikedByMe(boolean likedByMe) {
+        this.likedByMe = likedByMe;
     }
 
     public ReviewResponseDTO(UUID id, UUID userId, UUID mediaItemId, UserSummaryDTO user, MediaItemDTO mediaItem,
@@ -120,7 +156,7 @@ public class ReviewResponseDTO {
         if (review == null) {
             return null;
         }
-        return ReviewResponseDTO.builder()
+        ReviewResponseDTO dto = ReviewResponseDTO.builder()
                 .id(review.getId())
                 .userId(review.getUser() != null ? review.getUser().getId() : null)
                 .mediaItemId(review.getMediaItem() != null ? review.getMediaItem().getId() : null)
@@ -132,6 +168,8 @@ public class ReviewResponseDTO {
                 .createdAt(review.getCreatedAt())
                 .formattedCreatedAt(review.getCreatedAt() != null ? review.getCreatedAt().toString() : null)
                 .build();
+        dto.setAllowComments(review.isAllowComments());
+        return dto;
     }
 
     public static Builder builder() {

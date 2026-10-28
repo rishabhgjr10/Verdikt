@@ -17,9 +17,20 @@ public class CreateReviewRequest {
 
     private boolean containsSpoilers;
 
+    /** Null (older clients) keeps the review's current setting; new reviews default to true. */
+    private Boolean allowComments;
+
     private MediaItemDTO mediaDetails;
 
     public CreateReviewRequest() {
+    }
+
+    public Boolean getAllowComments() {
+        return allowComments;
+    }
+
+    public void setAllowComments(Boolean allowComments) {
+        this.allowComments = allowComments;
     }
 
     public CreateReviewRequest(UUID mediaItemId, Verdict verdict, String content, boolean containsSpoilers, MediaItemDTO mediaDetails) {

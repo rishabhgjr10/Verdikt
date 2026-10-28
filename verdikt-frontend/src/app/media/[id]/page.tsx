@@ -3,7 +3,12 @@
 import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { MediaDetailSkeleton } from "@/components/MediaDetailSkeleton";
-import { VerdictBadge } from "@/components/VerdictBadge";
+import { ReviewCard } from "@/components/reviews/ReviewCard";
+import { ReviewComposer } from "@/components/reviews/ReviewComposer";
+import { DeleteReviewDialog } from "@/components/reviews/DeleteReviewDialog";
+import { ShareCardModal } from "@/components/reviews/ShareCardModal";
+import { verdictOption } from "@/components/reviews/verdicts";
+import { useToast } from "@/context/ToastContext";
 import { TrailerModal } from "@/components/TrailerModal";
 import { ReviewModal } from "@/components/ReviewModal";
 import { MediaItem, ReviewWithRelations, Verdict } from "@/types/media";
@@ -15,7 +20,7 @@ import { GlassButton } from "@/components/GlassButton";
 import { MediaActions } from "@/components/MediaActions";
 import { RatingBadges } from "@/components/RatingBadges";
 import { ExternalReviews } from "@/components/ExternalReviews";
-import { CreatorsFact, ExpandableDescription } from "@/components/MediaHeroDetails";
+import { ExpandableDescription } from "@/components/MediaHeroDetails";
 import { NavMediaCategory } from "@/components/Navbar";
 import { PosterImage } from "@/components/PosterImage";
 import {
@@ -27,25 +32,24 @@ import {
   fetchTmdbMovieDetails,
   fetchTmdbCollection,
   fetchTmdbRecommendations,
+  fetchTmdbWatchProvidersIN,
   TmdbCollection,
   TmdbItem,
+  TmdbWatchProvider,
+  WatchOffer,
   voteToVerdict,
 } from "@/lib/tmdb";
 import {
   Play,
   PlusCircle,
-  Calendar,
   Film,
   Tv,
   Gamepad2,
   BookOpen,
   Sparkles,
-  Eye,
-  EyeOff,
-  User as UserIcon,
-  Clock,
   ExternalLink,
   Layers,
+  ChevronDown,
 } from "lucide-react";
 
 /** Converts http:// → https:// (Google Books / insecure CDN links) and builds high-res TMDB URLs */
@@ -55,6 +59,74 @@ function sanitizeImageUrl(url: string | null | undefined): string | null {
   if (trimmed.startsWith("http://")) return trimmed.replace("http://", "https://");
   if (trimmed.startsWith("/")) return `https://image.tmdb.org/t/p/w1280${trimmed}`;
   return trimmed;
+}
+
+/** Featured services with local logos in /public/Svg; wordmarks are transparent with dark fills, so they sit on a white tile */
+const PLATFORM_LOGOS: { match: string[]; src: string; wordmark?: boolean }[] = [
+  { match: ["netflix"], src: "/Svg/netflix.svg", wordmark: true },
+  { match: ["prime video"], src: "/Svg/prime-video.webp" },
+  { match: ["apple"], src: "/Svg/apple-tv.svg", wordmark: true },
+  { match: ["crunchyroll"], src: "/Svg/crunchyroll.webp" },
+  { match: ["hotstar", "jio"], src: "/Svg/jiohotstar.webp" },
+  { match: ["sony"], src: "/Svg/sonyliv.png" },
+];
+
+// Resold add-ons ("Crunchyroll Amazon Channel") are not the service itself
+const findPlatformLogo = (name: string) =>
+  /channel/i.test(name) ? undefined : PLATFORM_LOGOS.find((l) => l.match.some((m) => name.toLowerCase().includes(m)));
+
+const OFFER_LABELS: Record<WatchOffer, string> = {
+  flatrate: "Subscription",
+  free: "Free",
+  ads: "Free with ads",
+  rent: "Rent",
+  buy: "Buy",
+};
+
+/** Logo falls back local file → TMDB logo → coloured initial if an image fails to load. */
+function ProviderRow({ provider, title }: { provider: TmdbWatchProvider; title: string }) {
+  const name = provider.provider_name;
+  const local = findPlatformLogo(name);
+  const sources = [local?.src, provider.logo_path && `https://image.tmdb.org/t/p/original${provider.logo_path}`].filter(
+    Boolean
+  ) as string[];
+  const [failed, setFailed] = useState(0);
+  const src = sources[failed];
+  const { bg, text } = getPlatformColor(name);
+  return (
+    <li className="border-b border-white/[0.04] last:border-0">
+      <a
+        href={getPlatformSearchUrl(name, title)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-3 py-2 group rounded-md outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+      >
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt=""
+            onError={() => setFailed((f) => f + 1)}
+            className={`w-8 h-8 rounded-md object-contain shadow-sm border border-white/10 shrink-0 ${
+              src === local?.src && local.wordmark ? "bg-white p-1" : ""
+            }`}
+          />
+        ) : (
+          <span
+            className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${bg} ${text}`}
+            aria-hidden="true"
+          >
+            {name.charAt(0).toUpperCase()}
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-white truncate">{name}</span>
+          <span className="block text-xs text-zinc-500">{OFFER_LABELS[provider.offer]}</span>
+        </span>
+        <ExternalLink className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-200 transition-colors shrink-0" aria-hidden="true" />
+      </a>
+    </li>
+  );
 }
 
 const VERDICT_CONFIG: Record<
@@ -105,10 +177,15 @@ export default function MediaDetailPage({
   // Franchise & Recommendation Shelves
   const [collection, setCollection] = useState<TmdbCollection | null>(null);
   const [recommendations, setRecommendations] = useState<TmdbItem[]>([]);
+  // India watch providers fetched live: stored platformsJson is US-region names without logos
+  const [watchProviders, setWatchProviders] = useState<TmdbWatchProvider[] | null>(null);
 
   const [trailerModalOpen, setTrailerModalOpen] = useState(false);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
-  const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ReviewWithRelations | null>(null);
+  const [shareTarget, setShareTarget] = useState<ReviewWithRelations | null>(null);
+  const { showToast } = useToast();
   const [posterError, setPosterError] = useState(false);
   const [backdropError, setBackdropError] = useState(false);
 
@@ -163,6 +240,19 @@ export default function MediaDetailPage({
   }, [id]);
 
   useEffect(() => {
+    const type = mediaItem?.mediaType;
+    const extId = mediaItem?.externalId;
+    if (!extId || (type !== "MOVIE" && type !== "SERIES" && type !== "ANIME")) return;
+    let cancelled = false;
+    fetchTmdbWatchProvidersIN(type, extId).then((list) => {
+      if (!cancelled) setWatchProviders(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mediaItem?.mediaType, mediaItem?.externalId]);
+
+  useEffect(() => {
     if (mediaItem?.mediaType) {
       setActiveCategory(mediaItem.mediaType as NavMediaCategory);
     }
@@ -171,14 +261,45 @@ export default function MediaDetailPage({
     };
   }, [mediaItem?.mediaType, setActiveCategory]);
 
-  const toggleSpoiler = (reviewId: string) => {
-    setRevealedSpoilers((prev) => ({ ...prev, [reviewId]: !prev[reviewId] }));
-  };
-
   const reloadReviews = async () => {
     if (mediaItem?.id) {
       const revs = await reviewApi.getByMediaId(mediaItem.id);
       setReviews(revs);
+    }
+  };
+
+  // Optimistic: the card disappears at once and comes back if the server refuses
+  const confirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    const previous = reviews;
+    setDeleteTarget(null);
+    setReviews((list) => list.filter((r) => r.id !== target.id));
+    try {
+      await reviewApi.delete(target.id);
+      showToast("Review deleted");
+    } catch {
+      setReviews(previous);
+      showToast("Couldn't delete your review", { tone: "error", detail: "Nothing was changed. Please try again." });
+    }
+  };
+
+  const shareStory = async (rev: ReviewWithRelations) => {
+    const url = window.location.href;
+    const title = `${rev.user?.username ?? "A Verdikt member"} on ${mediaItem?.title ?? "Verdikt"}`;
+    // Spoilers stay out of anything that leaves the page
+    const text = `${verdictOption(rev.verdict).label}${rev.containsSpoilers ? "" : `: ${rev.content}`}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied");
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") {
+        showToast("Couldn't share this review", { tone: "error" });
+      }
     }
   };
 
@@ -214,6 +335,24 @@ export default function MediaDetailPage({
     ? null
     : (sanitizeImageUrl(mediaItem.backdropImage) || sanitizeImageUrl(mediaItem.coverImage));
 
+  // The viewer's own review leads the list
+  const myReview = user ? reviews.find((r) => r.user?.id === user.id) : undefined;
+  const orderedReviews = myReview ? [myReview, ...reviews.filter((r) => r !== myReview)] : reviews;
+
+  // TMDB lists tiers separately ("Netflix Standard with Ads"); keep the first entry per base service
+  const seenProviders = new Set<string>();
+  const providers = (watchProviders ?? []).flatMap((p) => {
+    const base = p.provider_name.split(" Standard")[0].split(" Premium")[0].split(" Free with Ads")[0].split(" with Ads")[0];
+    if (seenProviders.has(base)) return [];
+    seenProviders.add(base);
+    return [{ ...p, provider_name: base }];
+  });
+  // Main card: streaming offers on the six featured services; everything else goes to "Other Options"
+  const isPrimary = (p: TmdbWatchProvider) =>
+    p.offer !== "rent" && p.offer !== "buy" && !!findPlatformLogo(p.provider_name);
+  const primaryProviders = providers.filter(isPrimary);
+  const secondaryProviders = providers.filter((p) => !isPrimary(p));
+
   return (
     <div className="relative min-h-screen -mt-28 flex flex-col text-zinc-100">
       {/* Hero Backdrop Layer (seamless 640px behind the navbar; bottom mask fades into the page) */}
@@ -246,126 +385,89 @@ export default function MediaDetailPage({
 
       {/* Detail Page Content (relative z-10 with existing pt-28 clearance) */}
       <div className="relative z-10 flex-1 flex flex-col pt-28">
-        {/* ── Hero: poster + library actions | details + content actions ── */}
-        <div className="media-hero-container pt-8 pb-12 lg:pt-12">
-          <div className="media-hero-grid">
-            <div className="media-hero-left">
-              <div className="media-hero-poster">
-                <div className="rounded-2xl overflow-hidden border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)]">
-                  <PosterImage
-                    url={mediaItem.coverImage}
-                    title={mediaItem.title}
-                    mediaType={mediaItem.mediaType}
-                    releaseYear={mediaItem.releaseYear}
-                    className="border-0 rounded-none"
-                  />
-                </div>
-              </div>
+        {/* ── Hero: poster | title, facts, overview | library actions + watch online ── */}
+        {/* Same container as the shelves below so the poster lines up with their titles */}
+        <div className="max-w-[1400px] w-[calc(100%-48px)] mx-auto px-6 pt-12 pb-12 relative z-10 flex flex-col lg:flex-row gap-8 lg:gap-12">
+          {/* Left: poster only */}
+          {/* lg:w-64 until xl: a 320px poster at 1024px squeezes the center column to ~220px */}
+          <div className="flex-shrink-0 w-56 lg:w-64 xl:w-80 self-center lg:self-start">
+            <div className="aspect-[2/3] rounded-xl shadow-2xl border border-white/10 relative overflow-hidden">
+              <PosterImage
+                url={mediaItem.coverImage}
+                title={mediaItem.title}
+                mediaType={mediaItem.mediaType}
+                releaseYear={mediaItem.releaseYear}
+                className="border-0 rounded-none"
+              />
+            </div>
+          </div>
 
-              {/* Library actions: Watched / Watch Later / Collections (same width as the poster) */}
-              <div className="media-hero-library">
-                <MediaActions
-                  mediaId={mediaItem.id}
-                  mediaTitle={mediaItem.title}
-                  mediaType={mediaItem.mediaType}
-                  onUnwatched={() =>
-                    setReviews((prev) => prev.filter((rev) => rev.user?.id !== user?.id))
-                  }
-                />
-              </div>
+          {/* Center: metadata, title, facts, overview, genres */}
+          <div className="flex-1 min-w-0 flex flex-col">
+            <p className="text-sm text-zinc-400 font-medium flex items-center gap-1.5">
+              <TypeIcon className="w-3.5 h-3.5" aria-hidden="true" />
+              {[mediaTypeConfig.label, mediaItem.releaseYear].filter(Boolean).join(" • ")}
+            </p>
+
+            <h1
+              title={mediaItem.title}
+              className="text-4xl lg:text-5xl font-extrabold text-white tracking-tight mt-1 mb-4 leading-[1.05] line-clamp-2 break-words"
+            >
+              {mediaItem.title}
+            </h1>
+
+            {/* External ratings (client-side, never blocks the page; empty slot collapses) */}
+            <div className="mb-6 empty:hidden">
+              <RatingBadges mediaId={mediaItem.id} />
             </div>
 
-            <div className="media-hero-right">
-              {/* Title block */}
-              <div className="media-hero-head">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="media-hero-chip media-hero-chip--type text-xs font-semibold">
-                    <TypeIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                    {mediaTypeConfig.label}
-                  </span>
-                  {mediaItem.releaseYear && (
-                    <span className="media-hero-chip text-xs font-semibold">
-                      <Calendar className="w-3.5 h-3.5 text-zinc-300" aria-hidden="true" />
-                      {mediaItem.releaseYear}
-                    </span>
-                  )}
-                </div>
-
-                <h1
-                  data-rhythm="title"
-                  title={mediaItem.title}
-                  className="text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05] text-white line-clamp-2 break-words"
-                >
-                  {mediaItem.title}
-                </h1>
-              </div>
-
-              {/* Details */}
-              <div className="media-hero-details">
-                {/* External ratings (client-side, never blocks the page; empty slot collapses) */}
-                <div data-rhythm="ratings">
-                  <RatingBadges mediaId={mediaItem.id} />
-                </div>
-
-                {mediaItem.creatorsJson && mediaItem.creatorsJson.length > 0 && (
-                  <CreatorsFact data-rhythm="facts" creators={mediaItem.creatorsJson} />
-                )}
-
-                {mediaItem.description && (
-                  <ExpandableDescription data-rhythm="description" text={mediaItem.description} />
-                )}
-
-                {mediaItem.genresJson && mediaItem.genresJson.length > 0 && (
-                  <ul data-rhythm="genres" className="flex flex-wrap gap-2" aria-label="Genres">
-                    {mediaItem.genresJson.map((genre, idx) => (
-                      <li key={idx} className="media-hero-chip text-xs font-medium">
-                        {genre}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {mediaItem.platformsJson && mediaItem.platformsJson.length > 0 && (
-                  <div data-rhythm="platforms">
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Available on
-                    </h2>
-                    <ul className="mt-2 flex flex-wrap gap-2">
-                      {mediaItem.platformsJson.map((plat, idx) => {
-                        const { bg, text } = getPlatformColor(plat);
-                        const url = getPlatformSearchUrl(plat, mediaItem.title);
-                        return (
-                          <li key={idx}>
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="media-hero-chip media-hero-chip--link media-hero-chip--platform gap-2 text-sm font-medium group outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-                            >
-                              <span
-                                className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${bg} ${text}`}
-                                aria-hidden="true"
-                              >
-                                {plat.charAt(0).toUpperCase()}
-                              </span>
-                              {plat}
-                              <ExternalLink className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200 transition-colors shrink-0" aria-hidden="true" />
-                            </a>
-                          </li>
-                        );
-                      })}
-                    </ul>
+            {/* shortcut: MediaItem has no director/country/language/age rating, so only known facts show; add cells when the API returns them */}
+            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm mb-6">
+              {[
+                {
+                  label: mediaItem.mediaType === "BOOK" ? "Author" : "Created By",
+                  value: mediaItem.creatorsJson?.length
+                    ? mediaItem.creatorsJson.slice(0, 2).join(", ") +
+                      (mediaItem.creatorsJson.length > 2 ? ` +${mediaItem.creatorsJson.length - 2}` : "")
+                    : null,
+                  title: mediaItem.creatorsJson?.join(", "),
+                },
+                { label: "Type", value: mediaTypeConfig.label },
+                { label: "Released", value: mediaItem.releaseYear },
+                { label: "Genre", value: mediaItem.genresJson?.[0] },
+              ]
+                .filter((f) => f.value)
+                .map((f) => (
+                  <div key={f.label} className="min-w-0">
+                    <dt className="text-zinc-500">{f.label}</dt>
+                    <dd className="text-white font-medium truncate" title={f.title}>
+                      {f.value}
+                    </dd>
                   </div>
-                )}
-              </div>
+                ))}
+            </dl>
 
-              {/* Content actions: one matched pair on the text column's left edge */}
-              <div data-rhythm="actions" className="media-hero-content-actions flex flex-col sm:flex-row sm:flex-wrap gap-3">
-                <GlassButton
+            {mediaItem.description && (
+              <ExpandableDescription text={mediaItem.description} />
+            )}
+
+            {mediaItem.genresJson && mediaItem.genresJson.length > 0 && (
+              <ul className="flex flex-wrap gap-2 mt-4" aria-label="Genres">
+                {mediaItem.genresJson.map((genre, idx) => (
+                  <li key={idx} className="media-hero-chip text-xs font-medium">
+                    {genre}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* Content actions: verdict + trailer */}
+            <div className="flex flex-wrap items-center gap-4 mt-6">
+              <GlassButton
                   variant="neutral"
                   size="hero"
                   className="w-full sm:w-auto sm:min-w-[176px]"
-                  icon={<PlusCircle className="text-violet-300" />}
+                  icon={<PlusCircle />}
                   onClick={() => requireAuth(() => setReviewModalOpen(true))}
                 >
                   Write a Verdict
@@ -380,13 +482,51 @@ export default function MediaDetailPage({
                     size="hero"
                     className="w-full sm:w-auto sm:min-w-[176px]"
                     title={mediaItem.trailerUrl ? undefined : "Opens a trailer search on YouTube"}
-                    icon={<Play className="text-violet-300 fill-violet-300" />}
+                    icon={<Play className="fill-current" />}
                   >
                     Watch Trailer
                   </GlassButton>
                 )}
-              </div>
             </div>
+          </div>
+
+          {/* Right: library actions + watch online */}
+          <div className="flex-shrink-0 w-full lg:w-72 flex flex-col gap-3">
+            <MediaActions
+              mediaId={mediaItem.id}
+              mediaTitle={mediaItem.title}
+              mediaType={mediaItem.mediaType}
+              onUnwatched={() =>
+                setReviews((prev) => prev.filter((rev) => rev.user?.id !== user?.id))
+              }
+            />
+
+            {primaryProviders.length > 0 && (
+              <section className="mt-6 bg-zinc-900/40 backdrop-blur-md border border-white/[0.08] rounded-2xl p-4">
+                <h2 className="flex justify-between items-center text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+                  Watch Online
+                </h2>
+                <ul>
+                  {primaryProviders.map((p) => (
+                    <ProviderRow key={p.provider_id} provider={p} title={mediaItem.title} />
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {secondaryProviders.length > 0 && (
+              <details className="group/other rounded-2xl border border-white/[0.06] px-4 py-2">
+                <summary className="cursor-pointer list-none flex justify-between items-center text-xs font-semibold text-zinc-500 uppercase tracking-wider py-1 rounded outline-none focus-visible:ring-2 focus-visible:ring-white/40">
+                  Other Options ({secondaryProviders.length})
+                  <ChevronDown className="w-3.5 h-3.5 transition-transform group-open/other:rotate-180" aria-hidden="true" />
+                </summary>
+                <ul className="mt-2">
+                  {secondaryProviders.map((p) => (
+                    <ProviderRow key={p.provider_id} provider={p} title={mediaItem.title} />
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
         </div>
 
@@ -556,87 +696,41 @@ export default function MediaDetailPage({
             </button>
           </div>
 
-          {reviews.length > 0 ? (
-            <div className="space-y-4">
-              {reviews.map((rev) => {
-                const isSpoiler = rev.containsSpoilers;
-                const isRevealed = revealedSpoilers[rev.id];
+          {/* Inline composer for signed-in members who haven't reviewed this title yet */}
+          {user && !myReview && (
+            <ReviewComposer mediaItem={mediaItem} user={user} onSaved={reloadReviews} />
+          )}
 
-                return (
-                  <div
-                    key={rev.id}
-                    className="p-5 rounded-2xl bg-zinc-900/60 border border-white/[0.08] shadow-md space-y-3"
-                  >
-                    {/* Author Header */}
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden">
-                          {rev.user?.avatarUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={rev.user.avatarUrl}
-                              alt={rev.user.username}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <UserIcon className="w-5 h-5 text-zinc-400" />
-                          )}
-                        </div>
-                        <div>
-                          <span className="text-sm font-semibold text-white block">
-                            {rev.user?.username || "Verdikt Member"}
-                          </span>
-                          <span className="text-[11px] text-zinc-500 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {rev.createdAt
-                              ? new Date(rev.createdAt).toLocaleDateString()
-                              : "Recently"}
-                          </span>
-                        </div>
-                      </div>
-
-                      <VerdictBadge verdict={rev.verdict} size="md" />
-                    </div>
-
-                    {/* Review Content with Spoiler Blur */}
-                    <div className="relative pt-1">
-                      {isSpoiler && !isRevealed ? (
-                        <div className="relative p-4 rounded-xl bg-black/60 border border-amber-900/50 text-center">
-                          <p className="text-sm text-zinc-500 filter blur-sm select-none">
-                            {rev.content}
-                          </p>
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <button
-                              onClick={() => toggleSpoiler(rev.id)}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-800/80 shadow-md hover:bg-amber-900 transition-colors cursor-pointer"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              Warning: Spoiler — Click to Reveal
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-line">
-                            {rev.content}
-                          </p>
-                          {isSpoiler && (
-                            <button
-                              onClick={() => toggleSpoiler(rev.id)}
-                              className="mt-2 inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-400 cursor-pointer"
-                            >
-                              <EyeOff className="w-3 h-3" />
-                              Hide Spoiler
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
+          {orderedReviews.length > 0 ? (
+            <div>
+              {orderedReviews.map((rev) =>
+                rev.id === editingReviewId && user ? (
+                  <div key={rev.id} className="mb-4">
+                    <ReviewComposer
+                      mediaItem={mediaItem}
+                      user={user}
+                      review={rev}
+                      // The upsert response carries fresh like/comment counts, so the remounted card starts current
+                      onSaved={(saved) => {
+                        setReviews((list) => list.map((r) => (r.id === saved.id ? saved : r)));
+                        setEditingReviewId(null);
+                      }}
+                      onCancel={() => setEditingReviewId(null)}
+                    />
                   </div>
-                );
-              })}
+                ) : (
+                  <ReviewCard
+                    key={rev.id}
+                    review={rev}
+                    onEdit={() => setEditingReviewId(rev.id)}
+                    onDelete={() => setDeleteTarget(rev)}
+                    onShareCard={() => setShareTarget(rev)}
+                    onShareStory={() => shareStory(rev)}
+                  />
+                )
+              )}
             </div>
-          ) : (
+          ) : user ? null : (
             <div className="text-center py-12 bg-zinc-900/30 rounded-2xl border border-white/[0.06]">
               <Sparkles className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
               <h3 className="text-base font-bold text-white">
@@ -675,6 +769,17 @@ export default function MediaDetailPage({
         mediaItem={mediaItem}
         onSuccess={reloadReviews}
       />
+
+      <DeleteReviewDialog
+        open={!!deleteTarget}
+        deleting={false}
+        onConfirm={confirmDelete}
+        onClose={() => setDeleteTarget(null)}
+      />
+
+      {shareTarget && (
+        <ShareCardModal review={shareTarget} mediaItem={mediaItem} onClose={() => setShareTarget(null)} />
+      )}
     </div>
   );
 }

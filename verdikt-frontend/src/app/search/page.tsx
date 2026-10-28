@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { NavMediaCategory } from "@/components/Navbar";
 import { MediaCard } from "@/components/MediaCard";
+import { SlidingPill } from "@/components/ui/SlidingPill";
 import { MediaItem } from "@/types/media";
 import { mediaApi } from "@/lib/api";
 import {
@@ -228,25 +229,14 @@ function SearchContent() {
 
             {/* ONE slim row of filter chips with counts, hiding types with zero results */}
             {!isLoading && filterChips.length > 0 && (
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-1">
-                {filterChips.map((chip) => {
-                  const isActive = activeFilter === chip.key;
-                  return (
-                    <button
-                      key={chip.key}
-                      type="button"
-                      onClick={() => handleFilterChipClick(chip.key)}
-                      className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                        isActive
-                          ? "bg-white/15 text-white"
-                          : "text-zinc-400 hover:text-white hover:bg-white/[0.06]"
-                      }`}
-                    >
-                      {chip.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <SlidingPill
+                variant="filter"
+                ariaLabel="Filter results by type"
+                className="no-scrollbar pt-1"
+                items={filterChips.map((chip) => ({ value: chip.key, label: chip.label }))}
+                activeValue={activeFilter}
+                onChange={(key) => handleFilterChipClick(key as NavMediaCategory)}
+              />
             )}
           </div>
         ) : (

@@ -101,8 +101,8 @@ export function ProfileDropdown({ isOpen, onClose, anchorRef }: ProfileDropdownP
     };
   }, [isOpen, isClosing]);
 
-  // Focusable items count
-  const itemsCount = 2;
+  // Focusable items count: signed in = Profile, Library, Sign out; signed out = Sign in, Create account
+  const itemsCount = user ? 3 : 2;
 
   // Keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -204,13 +204,28 @@ export function ProfileDropdown({ isOpen, onClose, anchorRef }: ProfileDropdownP
           {/* Divider */}
           <div className="h-px bg-white/10 my-1 mx-1" role="separator" />
 
-          {/* Library: Watch History, Watch Later, Collections */}
+          {/* Profile: reviews, collections and settings */}
           <Link
-            href="/library"
+            href="/profile"
             role="menuitem"
             tabIndex={focusedIndex === 0 ? 0 : -1}
             ref={(el) => {
               itemRefs.current[0] = el;
+            }}
+            onClick={requestClose}
+            className="w-full rounded-2xl px-3 py-2.5 text-zinc-200 hover:bg-white/10 hover:text-white flex items-center gap-2.5 text-xs font-medium cursor-pointer transition-all duration-200 outline-none focus-visible:bg-white/10 focus-visible:text-white"
+          >
+            <UserIcon className="w-4 h-4 text-zinc-400" />
+            <span>Profile</span>
+          </Link>
+
+          {/* Library: Watch History, Watch Later, Collections */}
+          <Link
+            href="/library"
+            role="menuitem"
+            tabIndex={focusedIndex === 1 ? 0 : -1}
+            ref={(el) => {
+              itemRefs.current[1] = el;
             }}
             onClick={requestClose}
             className="w-full rounded-2xl px-3 py-2.5 text-zinc-200 hover:bg-white/10 hover:text-white flex items-center gap-2.5 text-xs font-medium cursor-pointer transition-all duration-200 outline-none focus-visible:bg-white/10 focus-visible:text-white"
@@ -223,9 +238,9 @@ export function ProfileDropdown({ isOpen, onClose, anchorRef }: ProfileDropdownP
           <button
             type="button"
             role="menuitem"
-            tabIndex={focusedIndex === 1 ? 0 : -1}
+            tabIndex={focusedIndex === 2 ? 0 : -1}
             ref={(el) => {
-              itemRefs.current[1] = el;
+              itemRefs.current[2] = el;
             }}
             onClick={() => {
               logout();

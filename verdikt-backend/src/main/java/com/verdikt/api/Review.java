@@ -53,6 +53,10 @@ public class Review {
     @Column(name = "contains_spoilers", nullable = false)
     private boolean containsSpoilers;
 
+    // DB default keeps existing rows open to comments when ddl-auto adds the column
+    @Column(name = "allow_comments", nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT TRUE")
+    private boolean allowComments = true;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -116,6 +120,14 @@ public class Review {
 
     public void setContainsSpoilers(boolean containsSpoilers) {
         this.containsSpoilers = containsSpoilers;
+    }
+
+    public boolean isAllowComments() {
+        return allowComments;
+    }
+
+    public void setAllowComments(boolean allowComments) {
+        this.allowComments = allowComments;
     }
 
     public Instant getCreatedAt() {

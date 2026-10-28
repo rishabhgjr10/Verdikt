@@ -23,13 +23,14 @@ const VARIANTS: Record<GlassVariant, string> = {
  * bright primary with the only violet glow, and calmer glass for everything else.
  */
 const HERO_VARIANTS: Record<GlassVariant, string> = {
+  // Deep violet glass; the glow sits on the text so the box keeps its inset highlight
   primary:
-    "bg-gradient-to-b from-violet-400/55 to-violet-600/55 hover:from-violet-400/65 hover:to-violet-600/65 text-white border-violet-300/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_1px_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.35),0_0_24px_rgba(139,92,246,0.3)]",
+    "bg-violet-900/60 hover:bg-violet-800/80 backdrop-blur-md border-violet-500/30 text-white font-semibold tracking-wide [text-shadow:0_0_10px_rgba(167,139,250,0.6)] shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_8px_16px_rgba(0,0,0,0.4)]",
   neutral:
-    "bg-white/[0.09] hover:bg-white/[0.14] text-white border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.22),0_8px_24px_rgba(0,0,0,0.35)]",
+    "bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-lg border-white/[0.12] text-zinc-200 hover:text-white transition-colors font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
   active:
-    "bg-emerald-500/80 hover:bg-emerald-500/90 text-white border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_24px_rgba(0,0,0,0.35)]",
-  danger: `bg-red-500/15 hover:bg-red-500/25 text-red-300 border-red-400/25 ${BASE_SHADOW}`,
+    "bg-emerald-500/80 hover:bg-emerald-500/90 text-white border-white/20 font-semibold shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_24px_rgba(0,0,0,0.35)]",
+  danger: `bg-red-500/15 hover:bg-red-500/25 text-red-300 border-red-400/25 font-semibold ${BASE_SHADOW}`,
 };
 
 interface CommonProps {
@@ -70,7 +71,9 @@ export function glassButtonClasses(
     hero ? "gap-[var(--gb-gap,8px)]" : "gap-2",
     // Hero padding/gap come from CSS variables so a caller can tighten them without class conflicts
     hero ? "h-12 px-[var(--gb-px,20px)] [&_svg]:size-[18px] [&_svg]:shrink-0" : "h-11 px-5",
-    "text-sm font-semibold whitespace-nowrap select-none border cursor-pointer",
+    // Hero variants set their own weight (primary semibold, neutral medium)
+    hero ? "" : "font-semibold",
+    "text-sm whitespace-nowrap select-none border cursor-pointer",
     "transition-all duration-200 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none",
     "outline-none focus-visible:ring-2 focus-visible:ring-white/40",
     hero ? "rounded-2xl" : block ? "rounded-2xl" : "rounded-full",

@@ -7,14 +7,16 @@
 .ambient-indigo { top: -100px; right: 6%; width: 560px; height: 360px; background-color: var(--ambient-indigo); animation-duration: 20s; animation-delay: -7s; }
 .ambient-core { top: 10px; left: 38%; width: 260px; height: 120px; background-color: var(--ambient-core); animation-duration: 14s; animation-delay: -9s; animation-direction: alternate-reverse; }
 .ambient-accent { top: 40px; right: 28%; width: 220px; height: 100px; background-color: var(--ambient-accent); animation-duration: 16s; animation-delay: -2s; }
-.shared-navbar { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 50; width: calc(100% - 48px); max-width: 1400px; height: 64px; padding: 0 24px; display: flex; align-items: center; gap: 32px; border-radius: 9999px; border: 1px solid var(--nav-border); background-color: var(--nav-glass); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); box-shadow: var(--nav-shadow); color: var(--nav-text); font-family: var(--font-sans); letter-spacing: 0; }
+.shared-navbar { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 50; width: calc(100% - 48px); max-width: 1400px; height: 64px; padding: 0 24px; display: flex; align-items: center; gap: 32px; border-radius: 9999px; border: 1px solid var(--nav-border); background-color: var(--nav-glass); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); box-shadow: var(--nav-shadow); color: var(--nav-text); font-family: var(--font-inter), var(--font-sans); letter-spacing: 0; }
 .shared-navbar a, .shared-navbar button { outline: none; }
 .shared-navbar a:focus, .shared-navbar button:focus { outline: none; }
 .shared-navbar a:focus-visible, .shared-navbar button:focus-visible { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3); }
-.shared-navbar .shared-brand { font-size: 20px; font-weight: 800; line-height: 1; flex-shrink: 0; color: var(--nav-text); letter-spacing: -0.025em; }
+.shared-navbar .shared-brand { font-size: 26px; font-weight: 700; line-height: 1; flex-shrink: 0; color: var(--nav-text); letter-spacing: -0.035em; }
 .shared-brand span { color: #8b5cf6; }
 .shared-navbar .shared-categories { position: relative; display: flex; align-items: center; gap: 4px; height: 36px; padding: 0; min-width: 0; overflow-x: auto; scrollbar-width: none; background: transparent; border: 0; }
-.shared-category { position: relative; z-index: 10; flex-shrink: 0; padding: 6px 14px; border-radius: 9999px; font-size: 15px; line-height: 18px; font-weight: 500; letter-spacing: -0.01em; color: rgba(212, 212, 216, 0.9); transition: color .2s ease; white-space: nowrap; user-select: none; outline: none; }
+/* Glass pills sit behind the category text and span its full height */
+.shared-categories .shared-category-pill { top: 3px; bottom: 3px; }
+.shared-category { position: relative; z-index: 10; flex-shrink: 0; padding: 6px 16px; border-radius: 9999px; font-size: 15px; line-height: 18px; font-weight: 600; letter-spacing: 0; color: rgba(212, 212, 216, 0.9); transition: color .2s ease; white-space: nowrap; user-select: none; outline: none; }
 .shared-category:focus { outline: none; }
 .shared-category:focus-visible { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3); }
 .shared-category:hover { color: #ffffff; }

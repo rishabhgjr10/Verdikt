@@ -22,6 +22,7 @@ import { mediaApi } from "@/lib/api";
 import { MediaItem } from "@/types/media";
 import { PosterImage } from "@/components/PosterImage";
 import { ProfileDropdown } from "@/components/ProfileDropdown";
+import { GlidePill, useGlider } from "@/components/ui/SlidingPill";
 
 export type NavMediaCategory = "ALL" | MediaType;
 
@@ -93,68 +94,6 @@ function clearAllRecentSearches(): void {
 }
 
 /**
- * Sliding-pill helper: measures a row of items so a pill can glide to the hovered/active one.
- * Attach `track` to the row container (must be positioned), `item(i)` to each item, and
- * render <GlidePill> children before the items.
- */
-export function useGlider<T extends HTMLElement>() {
-  const track = useRef<T>(null);
-  const items = useRef<(HTMLElement | null)[]>([]);
-  const [rects, setRects] = useState<({ x: number; y: number; w: number; h: number } | undefined)[]>([]);
-  const [ready, setReady] = useState(false);
-  const [hover, setHover] = useState<number | null>(null);
-
-  useEffect(() => {
-    const el = track.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => measure());
-    const measure = () => {
-      setRects(Array.from(items.current, (n) => (n ? { x: n.offsetLeft, y: n.offsetTop, w: n.offsetWidth, h: n.offsetHeight } : undefined)));
-      // Items resizing on their own (e.g. a label expanding) must re-measure too
-      items.current.forEach((n) => n && ro.observe(n));
-      // Skip the transition on first paint so pills don't slide in from x=0
-      requestAnimationFrame(() => setReady(true));
-    };
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const item = (i: number) => (n: HTMLElement | null) => {
-    items.current[i] = n;
-  };
-  return { track, item, rects, ready, hover, setHover };
-}
-
-export function GlidePill({
-  glide,
-  index,
-  className,
-  box = false,
-}: {
-  glide: { rects: ({ x: number; y: number; w: number; h: number } | undefined)[]; ready: boolean };
-  index: number | null;
-  className: string;
-  /** Also track the item's vertical position and height (vertical or wrapping lists). */
-  box?: boolean;
-}) {
-  const rect = index === null ? undefined : glide.rects[index];
-  return (
-    <span
-      aria-hidden="true"
-      className={`glide-pill pointer-events-none absolute left-0 ${box ? "top-0" : ""} rounded-full ${className}`}
-      style={{
-        width: rect?.w ?? 0,
-        ...(box && { height: rect?.h ?? 0 }),
-        transform: `translate(${rect?.x ?? 0}px, ${box ? (rect?.y ?? 0) : 0}px)`,
-        opacity: rect ? 1 : 0,
-        // Transitions live in navbar.css (.glide-pill); none on first paint so pills do not slide in from x=0
-        ...(!glide.ready && { transition: "none" }),
-      }}
-    />
-  );
-}
-
-/**
  * Where item `index` sits once every label has finished expanding/collapsing. The active pill
  * animates straight there on the same duration and curve as the labels, so pill and buttons
  * move in lockstep instead of the pill chasing a layout that is still changing.
@@ -175,7 +114,7 @@ function settledRect(track: HTMLElement, index: number) {
 
 const navItemClass = (active: boolean) =>
   `nav-item relative z-10 inline-flex h-9 items-center overflow-hidden rounded-full text-sm select-none cursor-pointer transition-colors duration-200 ${
-    active ? "text-white font-semibold" : "text-zinc-400 hover:text-white font-medium"
+    active ? "text-white font-medium" : "text-zinc-400 hover:text-white font-medium"
   }`;
 
 function NavItemBody({
@@ -245,8 +184,8 @@ export function Navbar({
   }, [pathname]);
 
   const { activeCategory } = useNav();
-  const { track: catTrack, item: catItem, ...catGlide } = useGlider<HTMLElement>();
   const { track: utilTrack, item: utilItem, ...utilGlide } = useGlider<HTMLDivElement>();
+  const { track: catTrack, item: catItem, ...catGlide } = useGlider<HTMLElement>();
 
   // Compute active category (FIX 2: "/" never highlights any category)
   let currentCat: MediaType | null = null;
@@ -272,6 +211,7 @@ export function Navbar({
   } else if (urlType && urlType !== "ALL") {
     currentCat = urlType as MediaType;
   }
+  const currentCatIndex = categories.findIndex((c) => c.type === currentCat);
 
   // Right-cluster item that is open or matches the route: 0 Explore, 1 Schedule, 2 Library, 3 Alerts, 4 Search
   const activeNavIndex =
@@ -282,8 +222,6 @@ export function Navbar({
     : pathname.startsWith("/library") ? 2
     : pathname.startsWith("/search") ? 4
     : null;
-  const activeCatIndex = categories.findIndex((c) => c.type === currentCat);
-
   const [activeNavRect, setActiveNavRect] = useState<ReturnType<typeof settledRect>>();
   useEffect(() => {
     const el = utilTrack.current;
@@ -516,32 +454,35 @@ export function Navbar({
         </Link>
 
         {/* FIX 2: Categories without Home pill */}
+        {/* Frosted glass pills glide behind the hovered and active category (vertical inset lives in navbar.css) */}
         <nav
           ref={catTrack}
-          className="shared-categories"
           aria-label="Categories"
+          className="shared-categories"
           onMouseLeave={() => catGlide.setHover(null)}
         >
           <GlidePill
             glide={catGlide}
             index={catGlide.hover}
-            className="inset-y-0.5 bg-white/[0.08] backdrop-blur-md"
+            className="shared-category-pill bg-white/[0.06] backdrop-blur-md border border-white/[0.10]"
           />
           <GlidePill
             glide={catGlide}
-            index={activeCatIndex >= 0 ? activeCatIndex : null}
-            className="inset-y-0.5 bg-violet-500/20 border border-violet-400/30 shadow-[0_0_14px_rgba(139,92,246,0.25)]"
+            index={currentCatIndex >= 0 ? currentCatIndex : null}
+            className="shared-category-pill bg-white/[0.10] backdrop-blur-md border border-white/[0.15] shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_4px_12px_rgba(0,0,0,0.3)]"
           />
-          {categories.map((category, i) => (
+          {categories.map((c, i) => (
             <Link
-              key={category.type}
+              key={c.type}
               ref={catItem(i)}
-              href={`/search?type=${category.type}`}
+              href={`/search?type=${c.type}`}
               onMouseEnter={() => catGlide.setHover(i)}
+              // Same-path navigations (/search?type=A -> B) don't re-run the URL sync effect
+              onClick={() => setUrlType(c.type)}
               className="shared-category cursor-pointer outline-none focus:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
-              aria-current={currentCat === category.type ? "page" : undefined}
+              aria-current={c.type === currentCat ? "page" : undefined}
             >
-              {category.label}
+              {c.label}
             </Link>
           ))}
         </nav>

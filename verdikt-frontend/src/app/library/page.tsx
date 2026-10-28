@@ -9,6 +9,7 @@ import { buildAuthHref } from "@/lib/auth-redirect";
 import { collectionsApi, userMediaApi } from "@/lib/api";
 import { CollectionSummary, MediaItem } from "@/types/media";
 import { MediaCard } from "@/components/MediaCard";
+import { SlidingPill } from "@/components/ui/SlidingPill";
 import { GlassButton } from "@/components/GlassButton";
 import { GlassConfirmDialog } from "@/components/GlassConfirmDialog";
 
@@ -177,29 +178,17 @@ export default function LibraryPage() {
         <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Library</h1>
       </header>
 
-      <div role="tablist" aria-label="Library sections" className="flex gap-2 overflow-x-auto no-scrollbar">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            role="tab"
-            id={`${tabsId}-${key}`}
-            aria-selected={tab === key}
-            aria-controls={`${tabsId}-${key}-panel`}
-            onClick={() => {
-              setTab(key);
-              setOpenCollection(null);
-            }}
-            className={`glass-btn relative inline-flex items-center gap-2 h-10 px-4 rounded-full text-sm font-semibold border transition-colors whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-white/40 cursor-pointer ${
-              tab === key
-                ? "bg-white/15 text-white border-white/25 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]"
-                : "bg-white/[0.04] text-zinc-400 hover:text-white border-white/10"
-            }`}
-          >
-            <Icon className="w-4 h-4" aria-hidden="true" />
-            {label}
-          </button>
-        ))}
-      </div>
+      <SlidingPill
+        ariaLabel="Library sections"
+        className="no-scrollbar"
+        tabIdPrefix={tabsId}
+        items={TABS.map(({ key, label, icon }) => ({ value: key, label, icon }))}
+        activeValue={tab}
+        onChange={(key) => {
+          setTab(key as Tab);
+          setOpenCollection(null);
+        }}
+      />
 
       <section id={`${tabsId}-${tab}-panel`} role="tabpanel" aria-labelledby={`${tabsId}-${tab}`}>
         {error ? (

@@ -3,6 +3,7 @@
 import React from "react";
 import { usePathname } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
 
 const AUTH_ROUTES = ["/login", "/register", "/signup"];
 
@@ -22,6 +23,12 @@ export function NavbarWrapper({ children }: { children: React.ReactNode }) {
         style={isAuthRoute ? undefined : { paddingTop: "7rem" }}
       >
         {children}
+        {/* mt-auto pins the footer to the bottom on short pages; pt-20 is the gap above it */}
+        {!isAuthRoute && (
+          <div className="mt-auto pt-20">
+            <Footer />
+          </div>
+        )}
       </div>
     </>
   );
