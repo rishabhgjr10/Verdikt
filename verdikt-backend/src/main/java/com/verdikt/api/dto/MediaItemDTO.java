@@ -25,6 +25,9 @@ public class MediaItemDTO {
     private LocalDate releaseDate;
     /** Up to two cached rating sources (from media_items.ratings_json); never triggers provider calls. */
     private List<Map<String, Object>> topRatings;
+    /** TMDB vote_count / popularity, set only on live TMDB search results; used for client-side search ranking. */
+    private Integer voteCount;
+    private Double popularity;
 
     public MediaItemDTO() {
     }
@@ -156,6 +159,22 @@ public class MediaItemDTO {
 
     public void setTopRatings(List<Map<String, Object>> topRatings) {
         this.topRatings = topRatings;
+    }
+
+    public Integer getVoteCount() {
+        return voteCount;
+    }
+
+    public void setVoteCount(Integer voteCount) {
+        this.voteCount = voteCount;
+    }
+
+    public Double getPopularity() {
+        return popularity;
+    }
+
+    public void setPopularity(Double popularity) {
+        this.popularity = popularity;
     }
 
     public static MediaItemDTO fromEntity(MediaItem entity) {

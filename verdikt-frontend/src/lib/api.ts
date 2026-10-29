@@ -1,5 +1,10 @@
 import axios from "axios";
-import { resolveSearchAlias } from "@/lib/catalog-navigation";
+import {
+  expandSearchQueries,
+  fallbackSearchQueries,
+  hasRatedTitleMatch,
+  resolveSearchAlias,
+} from "@/lib/catalog-navigation";
 import {
   AuthResponse,
   CollectionDetail,
@@ -78,6 +83,18 @@ export const mediaApi = {
       signal,
     });
     return response.data;
+  },
+  /**
+   * User-typed search across all types: also searches the hyphenated form ("spiderman" -> "spider-man") and, when no
+   * rated title matches, retries with one word dropped. Unranked and may hold duplicates: pass through rankAndFilterSearchResults.
+   */
+  searchTyped: async (query: string, page: number = 1, signal?: AbortSignal): Promise<MediaItem[]> => {
+    const run = (queries: string[]) =>
+      Promise.all(queries.map((q) => mediaApi.search(q, "ALL", page, signal))).then((r) => r.flat());
+    const items = await run(expandSearchQueries(query));
+    const fallbacks = fallbackSearchQueries(query);
+    if (!fallbacks.length || hasRatedTitleMatch(items, query)) return items;
+    return [...items, ...(await run(fallbacks))];
   },
   getById: async (id: string): Promise<MediaItem> => {
     const response = await api.get<MediaItem>(`/media/${id}`);

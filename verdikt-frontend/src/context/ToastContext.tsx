@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { pushAlert } from "@/lib/notifications";
 import { useIsClient } from "@/lib/use-is-client";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
@@ -15,7 +16,11 @@ interface Toast {
 }
 
 interface ToastContextType {
-  showToast: (message: string, options?: { tone?: ToastTone; detail?: string }) => void;
+  /** `alert` also files the toast in the navbar's Alerts list, linking to `href` when given */
+  showToast: (
+    message: string,
+    options?: { tone?: ToastTone; detail?: string; alert?: boolean | { href?: string } }
+  ) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -30,6 +35,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const id = nextId.current++;
     setToasts((current) => [...current.slice(-2), { id, message, detail: options?.detail, tone: options?.tone ?? "success" }]);
     window.setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), TOAST_MS);
+    if (options?.alert) {
+      pushAlert({ message, detail: options.detail, href: options.alert === true ? undefined : options.alert.href });
+    }
   }, []);
 
   return (
@@ -38,7 +46,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {mounted &&
         createPortal(
           <div
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] flex flex-col items-center gap-2 w-[min(420px,calc(100vw-2rem))] pointer-events-none"
+            // Above dialogs (Blind Verdikt is z-100) so confirmations show while one is open
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] flex flex-col items-center gap-2 w-[min(420px,calc(100vw-2rem))] pointer-events-none"
             aria-live="polite"
             role="status"
           >

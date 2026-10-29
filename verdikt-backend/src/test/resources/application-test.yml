@@ -15,6 +15,9 @@ spring:
         dialect: org.hibernate.dialect.H2Dialect
 
 verdikt:
+  jwt:
+    # Test-only key (64+ bytes); never used outside the in-memory test profile
+    secret: test-only-jwt-signing-secret-not-for-production-use-0123456789abcdef
   integrations:
     tmdb:
       api-key: ""

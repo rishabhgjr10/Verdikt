@@ -23,6 +23,79 @@ import { MediaItem } from "@/types/media";
 import { PosterImage } from "@/components/PosterImage";
 import { ProfileDropdown } from "@/components/ProfileDropdown";
 import { GlidePill, useGlider } from "@/components/ui/SlidingPill";
+import { BlindVerdikt } from "@/components/BlindVerdikt";
+import {
+  clearActivityAlerts,
+  markAlertsRead,
+  syncReleaseAlerts,
+  useAlerts,
+  type AppAlert,
+} from "@/lib/notifications";
+import { fetchHypedUpcomingMovies } from "@/lib/tmdb";
+
+function timeAgo(at: number) {
+  const minutes = Math.floor((Date.now() - at) / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
+}
+
+/** One group in the Alerts panel; unread rows carry a purple dot until the panel is closed. */
+function AlertSection({
+  title,
+  alerts,
+  action,
+  onPick,
+}: {
+  title: string;
+  alerts: AppAlert[];
+  action?: React.ReactNode;
+  onPick: () => void;
+}) {
+  return (
+    <section className="pb-1">
+      <div className="flex items-center justify-between px-2.5 pb-1 pt-2">
+        <h3 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{title}</h3>
+        {action}
+      </div>
+      <ul>
+        {alerts.map((a) => {
+          const body = (
+            <span className="flex items-center gap-2.5">
+              {a.image && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={a.image} alt="" className="h-12 w-8 shrink-0 rounded object-cover ring-1 ring-white/10" />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold text-white">{a.message}</span>
+                {a.detail && <span className="mt-0.5 block truncate text-zinc-400">{a.detail}</span>}
+                {a.kind !== "release" && <span className="mt-0.5 block text-[10px] text-zinc-500">{timeAgo(a.at)}</span>}
+              </span>
+              {!a.read && (
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]"
+                  aria-label="Unread"
+                />
+              )}
+            </span>
+          );
+          return (
+            <li key={a.id}>
+              {a.href ? (
+                <Link href={a.href} onClick={onPick}>
+                  {body}
+                </Link>
+              ) : (
+                <div className="p-2.5">{body}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 export type NavMediaCategory = "ALL" | MediaType;
 
@@ -162,6 +235,42 @@ export function Navbar({
   const [, startTransition] = useTransition();
 
   const [panel, setPanel] = useState<"account" | "notifications" | "search" | null>(null);
+  const alerts = useAlerts();
+  const hasUnreadAlerts = alerts.some((a) => !a.read);
+  const releaseAlerts = alerts.filter((a) => a.kind === "release");
+  const activityAlerts = alerts.filter((a) => a.kind !== "release");
+
+  // Unread dots stay visible while the panel is open; closing it is what marks everything as seen
+  const alertsWereOpen = useRef(false);
+  useEffect(() => {
+    if (alertsWereOpen.current && panel !== "notifications") markAlertsRead();
+    alertsWereOpen.current = panel === "notifications";
+  }, [panel]);
+
+  // The most hyped upcoming movies, refreshed into Alerts on each visit while signed in
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    fetchHypedUpcomingMovies(3).then((movies) => {
+      if (cancelled || !movies.length) return;
+      syncReleaseAlerts(
+        movies.map((m) => {
+          const date = new Date(`${m.release_date}T00:00:00`);
+          const days = Math.max(1, Math.ceil((date.getTime() - Date.now()) / 86_400_000));
+          return {
+            key: `release-movie-${m.id}`,
+            message: (m.title || "Untitled").trim(),
+            detail: `Releases ${days === 1 ? "tomorrow" : `in ${days} days`} · ${date.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`,
+            href: `/media/external/MOVIE/${m.id}`,
+            image: m.poster_path ? `/tmdb-img/t/p/w92${m.poster_path}` : null,
+          };
+        })
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   const [query, setQuery] = useState(initialQuery);
   const [urlType, setUrlType] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -329,7 +438,7 @@ export function Navbar({
       setIsLoadingSuggestions(true);
 
       mediaApi
-        .search(trimmed, "ALL", 1, controller.signal)
+        .searchTyped(trimmed, 1, controller.signal)
         .then((items) => {
           if (controller.signal.aborted) return;
           const ranked = rankAndFilterSearchResults(items, trimmed);
@@ -495,6 +604,7 @@ export function Navbar({
 
         {/* Utility Actions */}
         <div className="shared-utilities">
+          <BlindVerdikt />
           <div
             ref={utilTrack}
             className="relative flex items-center gap-1.5"
@@ -562,7 +672,7 @@ export function Navbar({
                   aria-expanded={panel === "notifications"}
                   onClick={() => setPanel(panel === "notifications" ? null : "notifications")}
                 >
-                  <NavItemBody icon={Bell} label="Alerts" active={activeNavIndex === 3} dot />
+                  <NavItemBody icon={Bell} label="Alerts" active={activeNavIndex === 3} dot={hasUnreadAlerts} />
                 </button>
               </>
             )}
@@ -662,8 +772,33 @@ export function Navbar({
 
         {/* Notifications Popover */}
         {panel === "notifications" && (
-          <div className="shared-menu text-xs text-zinc-400 p-3" role="status">
-            No new notifications yet
+          <div className="shared-menu w-[min(340px,calc(100vw-2rem))] p-2 text-xs" role="status">
+            {alerts.length === 0 ? (
+              <p className="p-2 text-zinc-400">No new notifications yet</p>
+            ) : (
+              <div className="max-h-[26rem] overflow-y-auto">
+                {releaseAlerts.length > 0 && (
+                  <AlertSection title="Releasing soon" alerts={releaseAlerts} onPick={() => setPanel(null)} />
+                )}
+                {activityAlerts.length > 0 && (
+                  <AlertSection
+                    title="Your activity"
+                    alerts={activityAlerts}
+                    onPick={() => setPanel(null)}
+                    action={
+                      <button
+                        type="button"
+                        onClick={clearActivityAlerts}
+                        className="text-[11px] font-semibold text-purple-300 hover:text-purple-200 cursor-pointer"
+                      >
+                        Clear all
+                      </button>
+                    }
+                  />
+                )}
+                <p className="px-2.5 pb-1 pt-2 text-[10px] text-zinc-500">Seen activity clears itself after a day.</p>
+              </div>
+            )}
           </div>
         )}
       </header>
@@ -718,7 +853,8 @@ export function Navbar({
                 aria-label="Search entertainment"
                 className="w-full bg-transparent text-sm text-white placeholder-zinc-500 outline-none"
               />
-              {query && (
+              {/* One X at a time: clear while there's a query, close otherwise (Esc and the backdrop still close) */}
+              {query ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -731,17 +867,18 @@ export function Navbar({
                 >
                   <X className="w-4 h-4" />
                 </button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label="Close search"
+                  className="h-8 w-8 text-zinc-400 hover:text-white"
+                  onClick={closeSearchModal}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                aria-label="Close search"
-                className="h-8 w-8 text-zinc-400 hover:text-white"
-                onClick={closeSearchModal}
-              >
-                <X className="w-4 h-4" />
-              </Button>
             </form>
 
             {/* Listbox Body */}

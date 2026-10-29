@@ -25,6 +25,9 @@ export interface TmdbItem {
   popularity?: number;
   media_type?: string;
   overview?: string;
+  /** List/discover responses only */
+  genre_ids?: number[];
+  original_language?: string;
   /** Movie details only (minutes) */
   runtime?: number | null;
   /** Movie details only, e.g. "Released", "In Production", "Post Production", "Planned" */
@@ -280,6 +283,40 @@ export async function fetchTrendingAnime(): Promise<TmdbItem[]> {
 }
 
 /**
+ * Where a Blind Verdikt draw comes from: "india" = made in India (best rated first), "india-popular" = streaming in
+ * India (most popular first), "global" = best rated anywhere.
+ */
+export type DrawPool = "india" | "india-popular" | "global";
+
+/**
+ * One page of well-rated titles from `pool`, plus how many pages it has (Blind Verdikt draws from a random page).
+ * Series is live-action only and Anime is Japanese animation only, so the two never overlap. The vote floors keep
+ * obscure titles with a few perfect votes out; Indian titles get far fewer TMDB votes, so their floors are lower.
+ */
+export async function fetchTopRatedPage(
+  type: "MOVIE" | "SERIES" | "ANIME",
+  page: number,
+  pool: DrawPool = "global"
+): Promise<{ results: TmdbItem[]; totalPages: number }> {
+  const filter = {
+    MOVIE: `movie?vote_count.gte=${pool === "india" ? 150 : 3000}`,
+    // Live-action only: 16 = Animation genre, 210024 = "anime" keyword
+    SERIES: `tv?vote_count.gte=${pool === "india" ? 40 : 800}&without_genres=16&without_keywords=210024`,
+    ANIME: "tv?vote_count.gte=300&with_genres=16&with_original_language=ja",
+  }[type];
+  const region = {
+    india: "&with_origin_country=IN&sort_by=vote_average.desc",
+    "india-popular": "&watch_region=IN&with_watch_monetization_types=flatrate|free|ads&sort_by=popularity.desc",
+    global: "&sort_by=vote_average.desc",
+  }[pool];
+  const data = await cachedFetchJson<{ results?: TmdbItem[]; total_pages?: number }>(
+    `${TMDB_BASE_URL}/discover/${filter}${region}&vote_average.gte=7&page=${page}` +
+      `&api_key=${TMDB_API_KEY}&language=en-US`
+  );
+  return { results: data?.results || [], totalPages: data?.total_pages || 0 };
+}
+
+/**
  * Fetch detailed movie information from TMDB, including belongs_to_collection.
  */
 export async function fetchTmdbMovieDetails(tmdbId: string | number): Promise<TmdbItem | null> {
@@ -318,6 +355,7 @@ export interface TmdbHeroDetails {
   ageRating: string | null;
   releaseDate: string | null;
   runtimeMinutes: number | null;
+  genres: string[];
   crew: TmdbCrewCredit[];
   backdrops: string[];
   belongs_to_collection: TmdbItem["belongs_to_collection"];
@@ -389,6 +427,7 @@ export async function fetchTmdbHeroDetails(
       ageRating,
       releaseDate: (isTv ? d.first_air_date : d.release_date) || null,
       runtimeMinutes: (isTv ? d.episode_run_time?.[0] : d.runtime) || null,
+      genres: ((d.genres || []) as { name: string }[]).map((g) => g.name),
       crew,
       backdrops,
       belongs_to_collection: d.belongs_to_collection ?? null,
@@ -451,15 +490,19 @@ export async function fetchTmdbTrailerUrl(type: MediaType, tmdbId: string | numb
   try {
     const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
     const res = await fetchWithTimeout(
-      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/videos?api_key=${TMDB_API_KEY}&language=en-US`,
+      // Anime and Indian titles often only have Japanese or Indian-language trailers; English ones still win below
+      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/videos?api_key=${TMDB_API_KEY}&language=en-US` +
+        `&include_video_language=en,hi,ja,ta,te,ml,kn,null`,
       {},
       4000
     );
     if (!res.ok) return null;
     const data = await res.json();
-    const videos: { site: string; type: string; official: boolean; key: string }[] = (data.results || []).filter(
-      (v: { site: string }) => v.site === "YouTube"
-    );
+    const videos: { site: string; type: string; official: boolean; key: string; iso_639_1: string }[] = (
+      data.results || []
+    )
+      .filter((v: { site: string }) => v.site === "YouTube")
+      .sort((a: { iso_639_1: string }, b: { iso_639_1: string }) => Number(b.iso_639_1 === "en") - Number(a.iso_639_1 === "en"));
     const pick =
       videos.find((v) => v.type === "Trailer" && v.official) ||
       videos.find((v) => v.type === "Trailer") ||
@@ -533,6 +576,26 @@ async function tmdbList(path: string, params: TmdbParams, mediaType?: "movie" | 
     console.error(`TMDB request failed: ${path}`, err);
     return [];
   }
+}
+
+/**
+ * The most hyped movies releasing worldwide in the next 45 days (theatrical, limited or digital), most popular first.
+ * TMDB popularity is its hype signal for unreleased titles: it tracks views, watchlists and searches.
+ */
+export async function fetchHypedUpcomingMovies(limit = 3): Promise<TmdbItem[]> {
+  const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  const results = await tmdbList(
+    "/discover/movie",
+    {
+      "primary_release_date.gte": day(1),
+      "primary_release_date.lte": day(45),
+      with_release_type: "2|3|4",
+      sort_by: "popularity.desc",
+      include_adult: false,
+    },
+    "movie"
+  );
+  return results.filter((m) => m.poster_path).slice(0, limit);
 }
 
 /** Trending movies + TV of the week. */

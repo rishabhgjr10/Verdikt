@@ -97,12 +97,16 @@ public class MediaItemService {
                     log.warn("Failed checking local DB for existing item [extId={}]: {}", ext.getExternalId(), e.getMessage());
                 }
 
-                boolean existsInLocalList = results.stream().anyMatch(
+                Optional<MediaItemDTO> localMatch = results.stream().filter(
                         local -> local != null
                               && local.getExternalId() != null
                               && local.getExternalId().equals(ext.getExternalId())
-                              && local.getMediaType() == ext.getMediaType());
-                if (!existsInLocalList) {
+                              && local.getMediaType() == ext.getMediaType()).findFirst();
+                if (localMatch.isPresent()) {
+                    // Saved rows have no live popularity, so keep the provider's for search ranking
+                    localMatch.get().setVoteCount(ext.getVoteCount());
+                    localMatch.get().setPopularity(ext.getPopularity());
+                } else {
                     results.add(ext);
                 }
             }

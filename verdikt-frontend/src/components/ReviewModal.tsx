@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { MediaItem, Verdict } from "@/types/media";
 import { reviewApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { X, Sparkles, AlertCircle, ShieldAlert, CheckCircle2, ThumbsUp, XCircle } from "lucide-react";
 
 // Same labels and icons as VerdictBadge; each verdict glows in its own colour when selected
@@ -48,6 +49,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
   onSuccess,
 }) => {
   const { user } = useAuth();
+  const { showToast } = useToast();
   // No preset verdict: a default nudges people toward it
   const [selectedVerdict, setSelectedVerdict] = useState<Verdict | null>(null);
   const [content, setContent] = useState("");
@@ -86,6 +88,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
 
       setContent("");
       onClose();
+      showToast("Your verdict is submitted", { detail: mediaItem.title, alert: { href: `/media/${mediaItem.id}` } });
       if (onSuccess) onSuccess();
     } catch (err: any) {
       console.error("Failed to submit review", err);

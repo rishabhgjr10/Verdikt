@@ -52,7 +52,7 @@ function SearchContent() {
     // 1. If explicit search query is provided
     if (searchTerm) {
       // In text search mode, fetch across ALL categories so client-side filter chips have full counts
-      const results = await mediaApi.search(searchTerm, "ALL", pageToFetch);
+      const results = await mediaApi.searchTyped(searchTerm, pageToFetch);
       const deduped = deduplicateMedia(results);
       return rankAndFilterSearchResults(deduped, searchTerm);
     }

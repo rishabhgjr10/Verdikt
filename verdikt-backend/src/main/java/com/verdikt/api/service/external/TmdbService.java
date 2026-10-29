@@ -190,7 +190,10 @@ public class TmdbService {
 
             List<MediaItemDTO> list = new ArrayList<>();
             for (JsonNode node : response.get("results")) {
-                list.add(mapTvNodeToDTO(node, MediaType.ANIME));
+                // /search/tv has no genre filter, so drop non-anime shows instead of labelling them ANIME
+                if (isBlank || isJapaneseAnimation(node, List.of())) {
+                    list.add(mapTvNodeToDTO(node, MediaType.ANIME));
+                }
             }
             return list;
         } catch (Exception e) {
@@ -293,7 +296,7 @@ public class TmdbService {
             }
         }
 
-        return MediaItemDTO.builder()
+        MediaItemDTO dto = MediaItemDTO.builder()
                 .externalId(id)
                 .mediaType(MediaType.MOVIE)
                 .title(title)
@@ -304,6 +307,8 @@ public class TmdbService {
                 .description(overview)
                 .genresJson(genres)
                 .build();
+        setPopularitySignals(node, dto);
+        return dto;
     }
 
     private MediaItemDTO mapTvNodeToDTO(JsonNode node, MediaType defaultType) {
@@ -325,11 +330,8 @@ public class TmdbService {
         }
 
         MediaType finalType = defaultType;
-        if (defaultType == MediaType.SERIES && (genres.contains("Animation") || genres.contains("Anime"))) {
-            String originCountry = node.path("origin_country").toString();
-            if (originCountry != null && originCountry.contains("JP")) {
-                finalType = MediaType.ANIME;
-            }
+        if (defaultType == MediaType.SERIES && isJapaneseAnimation(node, genres)) {
+            finalType = MediaType.ANIME;
         }
 
         List<String> creators = new ArrayList<>();
@@ -339,7 +341,7 @@ public class TmdbService {
             }
         }
 
-        return MediaItemDTO.builder()
+        MediaItemDTO dto = MediaItemDTO.builder()
                 .externalId(id)
                 .mediaType(finalType)
                 .title(title)
@@ -351,6 +353,27 @@ public class TmdbService {
                 .creatorsJson(creators)
                 .genresJson(genres)
                 .build();
+        setPopularitySignals(node, dto);
+        return dto;
+    }
+
+    /** Detail responses carry genre names; search responses only carry genre_ids (16 = Animation). */
+    private boolean isJapaneseAnimation(JsonNode node, List<String> genres) {
+        boolean animated = genres.contains("Animation") || genres.contains("Anime");
+        for (JsonNode g : node.path("genre_ids")) {
+            animated |= g.asInt() == 16;
+        }
+        return animated && (node.path("origin_country").toString().contains("JP")
+                || "ja".equals(node.path("original_language").asText()));
+    }
+
+    private void setPopularitySignals(JsonNode node, MediaItemDTO dto) {
+        if (node.hasNonNull("vote_count")) {
+            dto.setVoteCount(node.path("vote_count").asInt());
+        }
+        if (node.hasNonNull("popularity")) {
+            dto.setPopularity(node.path("popularity").asDouble());
+        }
     }
 
     private void extractExtraDetails(JsonNode node, MediaItemDTO dto) {

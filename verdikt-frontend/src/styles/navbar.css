@@ -90,3 +90,15 @@
   .shared-navbar .shared-icon::before { content: ""; position: absolute; inset: -6px -7px; }
 }
 @media (prefers-reduced-motion: reduce) { .shared-auth-fade { animation: none; } .ambient-blob { animation: none; } .shared-navbar *, .shared-search-dialog * { transition: none; } }
+
+/* Blind Verdikt: face-down deck, shuffle while dealing, flip-in reveal of the dealt card */
+.bv-backdrop { animation: bv-fade .2s ease-out; }
+.bv-panel { animation: bv-panel-in .32s cubic-bezier(.2, .9, .3, 1.15); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); }
+.bv-card-back { border: 1px solid rgba(192, 132, 252, .35); background: radial-gradient(120% 80% at 50% 0%, rgba(168, 85, 247, .35), transparent 60%), repeating-linear-gradient(45deg, rgba(255, 255, 255, .04) 0 2px, transparent 2px 10px), #120d1c; box-shadow: 0 20px 40px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .1); }
+.bv-shuffling { animation: bv-shuffle .5s ease-in-out infinite; }
+.bv-reveal { animation: bv-reveal .55s cubic-bezier(.2, .9, .3, 1.1) both; transform-origin: 25% 50%; }
+@keyframes bv-fade { from { opacity: 0; } }
+@keyframes bv-panel-in { from { opacity: 0; transform: translateY(8px) scale(.96); } }
+@keyframes bv-shuffle { 50% { transform: translate(calc(var(--dx) * -1.4), -10px) rotate(calc(var(--r) * -1.5)); } }
+@keyframes bv-reveal { from { opacity: 0; transform: perspective(1400px) rotateY(-75deg) scale(.9); } }
+@media (prefers-reduced-motion: reduce) { .bv-backdrop, .bv-panel, .bv-shuffling, .bv-reveal { animation: none; } }

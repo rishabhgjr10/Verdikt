@@ -12,7 +12,15 @@ import { useToast } from "@/context/ToastContext";
 import { TrailerModal } from "@/components/TrailerModal";
 import { ReviewModal } from "@/components/ReviewModal";
 import { CollectionsSheet } from "@/components/CollectionsSheet";
-import { CollectionSummary, MediaItem, MediaType, MediaUserState, ReviewWithRelations, Verdict } from "@/types/media";
+import {
+  CollectionSummary,
+  MediaItem,
+  MediaItemExtras,
+  MediaType,
+  MediaUserState,
+  ReviewWithRelations,
+  Verdict,
+} from "@/types/media";
 import { collectionsApi, mediaApi, reviewApi, userMediaApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
@@ -562,6 +570,17 @@ export default function MediaDetailPage({
     }
   };
 
+  // Links such as Blind Verdikt's "Write a Verdikt" end in #review-composer; the composer only exists once the page has loaded
+  useEffect(() => {
+    if (isLoading || window.location.hash !== "#review-composer") return;
+    const frame = requestAnimationFrame(() => {
+      const form = document.getElementById("review-composer");
+      form?.scrollIntoView({ behavior: "smooth", block: "center" });
+      form?.querySelector("textarea")?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isLoading]);
+
   if (isLoading) {
     return <MediaDetailSkeleton />;
   }
@@ -597,8 +616,10 @@ export default function MediaDetailPage({
   const slides = heroDetails?.backdrops.length ? heroDetails.backdrops : heroImg ? [heroImg] : [];
   // A cover used as a backdrop is portrait and low-res, so it stays blurred as before
   const blurSlides = !heroDetails?.backdrops.length && !sanitizeImageUrl(mediaItem.backdropImage);
-  const releaseDate = heroDetails?.releaseDate
-    ? new Date(heroDetails.releaseDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+  // The live TMDB date wins; the one stored with the title covers a failed or timed-out TMDB request
+  const releaseDateIso = heroDetails?.releaseDate ?? (mediaItem as MediaItem & MediaItemExtras).releaseDate ?? null;
+  const releaseDate = releaseDateIso
+    ? new Date(releaseDateIso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
     : null;
   const metaParts = [releaseDate, heroDetails?.runtimeMinutes ? formatRuntime(heroDetails.runtimeMinutes) : null].filter(Boolean);
 
@@ -629,8 +650,11 @@ export default function MediaDetailPage({
   const orderedReviews = myReview ? [myReview, ...reviews.filter((r) => r !== myReview)] : reviews;
 
   // Not out yet (TMDB release date in the future): no watching or verdicts until it releases
-  const releaseAt = heroDetails?.releaseDate ? new Date(`${heroDetails.releaseDate}T00:00:00`) : null;
-  const isUnreleased = !!releaseAt && releaseAt.getTime() > now;
+  // Without any date, a future release year still keeps "Mark as Watched" and verdicts off titles that aren't out yet
+  const releaseAt = releaseDateIso ? new Date(`${releaseDateIso.slice(0, 10)}T00:00:00`) : null;
+  const isUnreleased =
+    (!!releaseAt && releaseAt.getTime() > now) ||
+    (!releaseAt && !!mediaItem.releaseYear && mediaItem.releaseYear > new Date(now).getFullYear());
   const daysToRelease = releaseAt ? Math.ceil((releaseAt.getTime() - now) / 86_400_000) : 0;
 
   // One entry point for writing a verdict: edit your own, else jump to the inline composer, else the modal

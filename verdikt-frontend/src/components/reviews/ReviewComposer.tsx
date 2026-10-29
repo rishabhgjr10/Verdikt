@@ -68,7 +68,8 @@ export function ReviewComposer({
         mediaDetails: mediaItem,
       });
       onSaved(saved);
-      showToast(editing ? "Review updated" : "Review posted");
+      if (editing) showToast("Review updated");
+      else showToast("Your verdict is submitted", { detail: mediaItem.title, alert: { href: `/media/${mediaItem.id}` } });
       if (!editing) reset();
     } catch {
       setError(editing ? "Couldn't update your review. Please try again." : "Couldn't post your review. Please try again.");
