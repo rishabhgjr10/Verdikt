@@ -20,6 +20,8 @@ export interface CollectionsSheetProps {
   collectionIds: string[];
   /** Called with the user's collection ids that now contain the item. */
   onCollectionsChange?: (collectionIds: string[]) => void;
+  /** Stacking layer; raise it when the sheet opens over another modal */
+  layerClassName?: string;
 }
 
 const MAX_NAME = 60;
@@ -33,7 +35,7 @@ function errorMessage(err: unknown, fallback: string) {
  * Glass modal (centered on desktop, bottom sheet on mobile) to toggle the item in
  * the user's collections or create a new one. Watch History is shown locked.
  */
-export function CollectionsSheet({ open, onClose, mediaId, mediaTitle, watched, collectionIds, onCollectionsChange }: CollectionsSheetProps) {
+export function CollectionsSheet({ open, onClose, mediaId, mediaTitle, watched, collectionIds, onCollectionsChange, layerClassName = "z-[80]" }: CollectionsSheetProps) {
   const { showToast } = useToast();
   const mounted = useIsClient();
   // The parent mounts the sheet fresh on every open, so initial state is the snapshot at open time.
@@ -129,7 +131,7 @@ export function CollectionsSheet({ open, onClose, mediaId, mediaTitle, watched, 
   const systemCollections = collections?.filter((c) => c.isSystem) ?? [];
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4">
+    <div className={`fixed inset-0 ${layerClassName} flex items-end sm:items-center justify-center sm:p-4`}>
       <div className="glass-overlay glass-fade-in absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
       <div
         ref={panelRef}

@@ -63,6 +63,24 @@ export interface User {
   email: string;
   avatarUrl: string | null;
   createdAt?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  bio?: string | null;
+  instagramUrl?: string | null;
+  xUrl?: string | null;
+  youtubeUrl?: string | null;
+}
+
+/** Full new values for Edit Profile; blank clears a field. avatarStyle/avatarSeed are optional. */
+export interface UpdateProfilePayload {
+  firstName: string;
+  lastName: string;
+  bio: string;
+  instagramUrl: string;
+  xUrl: string;
+  youtubeUrl: string;
+  avatarStyle?: string;
+  avatarSeed?: string;
 }
 
 export interface AuthResponse {

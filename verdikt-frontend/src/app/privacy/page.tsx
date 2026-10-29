@@ -72,9 +72,10 @@ export default function PrivacyPage() {
           watched also deletes your review of it.
         </li>
         <li>
-          To delete your account, email <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a> from the address
-          on your account. We will delete your profile, reviews, comments, likes and collections, except where the law
-          requires us to keep some records.
+          You can delete your account at any time from Settings → Delete Account. This immediately and permanently
+          deletes your profile, reviews, comments, likes, collections and watch history. If you can&apos;t sign in,
+          email <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a> from the address on your account and
+          we will delete it for you.
         </li>
       </List>
       <Callout title="Before you share a review card">

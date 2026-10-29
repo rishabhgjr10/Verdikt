@@ -70,18 +70,28 @@
 @media (prefers-reduced-motion: reduce) { :root { --spring: ease-out; --nav-ease: ease-out; --nav-dur: .15s; } .glide-pill, .shared-navbar .nav-label, .shared-navbar .nav-label[data-active="true"] { transition-duration: .15s; transition-delay: 0s; } .nav-icon { animation: none !important; } }
 .catalog-empty { grid-column: 1 / -1; padding-block: 48px; }
 @media (min-width: 768px) and (max-width: 1100px) { .shared-navbar { gap: 14px; } .shared-category { padding-inline: 9px; } .shared-navbar .shared-explore { padding-inline: 10px; margin-right: 0; } .shared-utilities { gap: 2px; } }
+/* Tablets: the categories no longer fit beside the actions, so they get their own row (total height stays under the 7rem page offset) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .shared-navbar { top: 12px; height: auto; padding: 4px 12px 4px 24px; flex-wrap: wrap; row-gap: 0; border-radius: 26px; }
+  .shared-navbar .shared-utilities { height: 48px; }
+  .shared-navbar .shared-categories { order: 3; flex: 1 0 100%; height: 40px; justify-content: center; gap: 12px; margin: 0 -12px 0 -24px; padding-top: 2px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+  .shared-menu { top: calc(100% + 8px); }
+}
 @media (max-width: 767px) {
   .ambient-blob { animation: none !important; will-change: auto !important; }
   .ambient-magenta, .ambient-indigo, .ambient-core, .ambient-accent { display: none !important; }
   .ambient-main { top: -80px; left: calc(50% - 180px); width: 360px; height: 180px; filter: blur(50px); opacity: 0.7; }
-  .shared-navbar { gap: 8px; padding-inline: 14px; }
-  .shared-navbar .shared-brand { font-size: 19px; }
-  .shared-navbar .shared-categories { flex: 1; }
-  .shared-category { padding: 6px 9px; font-size: 12px; }
+  /* Phones: two rows (brand + actions, then a full-width category strip) instead of everything squeezed into one */
+  .shared-navbar { top: 10px; width: calc(100% - 20px); height: auto; padding: 6px 8px 4px 16px; flex-wrap: wrap; gap: 0 8px; border-radius: 22px; }
+  .shared-navbar .shared-brand { font-size: 21px; }
+  .shared-navbar .shared-utilities { height: 44px; }
+  .shared-navbar .shared-categories { order: 3; flex: 1 0 100%; height: 36px; margin: 2px -4px 0 -12px; justify-content: space-between; border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 2px; }
+  .shared-category { padding: 6px 10px; font-size: 13px; }
+  .shared-menu { top: calc(100% + 8px); right: 8px; }
   .shared-navbar .shared-desktop, .shared-navbar .shared-explore, .shared-divider { display: none; }
   .shared-utilities { gap: 0; }
-  .shared-navbar .shared-icon { width: 30px; height: 32px; }
-  .shared-navbar .shared-avatar { width: 26px; height: 26px; margin-left: 4px; }
+  .shared-navbar .shared-icon { width: 36px; height: 36px; }
+  .shared-navbar .shared-avatar { width: 30px; height: 30px; margin-left: 6px; }
   .shared-navbar .shared-signin, .shared-navbar .shared-signup { display: none; }
   .shared-navbar .shared-signin-compact { display: inline-flex; }
   .shared-auth-actions { margin-left: 2px; }
@@ -89,6 +99,8 @@
   .shared-navbar .shared-signin-compact::before { content: ""; position: absolute; inset: -4px -2px; }
   .shared-navbar .shared-icon::before { content: ""; position: absolute; inset: -6px -7px; }
 }
+/* Small phones (iPhone SE / 320px): all five categories still fit without scrolling */
+@media (max-width: 374px) { .shared-category { padding-inline: 6px; font-size: 12.5px; } .shared-navbar { padding-left: 14px; } }
 @media (prefers-reduced-motion: reduce) { .shared-auth-fade { animation: none; } .ambient-blob { animation: none; } .shared-navbar *, .shared-search-dialog * { transition: none; } }
 
 /* Blind Verdikt: face-down deck, shuffle while dealing, flip-in reveal of the dealt card */

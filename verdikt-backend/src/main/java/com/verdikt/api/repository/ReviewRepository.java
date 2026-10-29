@@ -2,6 +2,9 @@ package com.verdikt.api.repository;
 
 import com.verdikt.api.Review;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -18,4 +21,8 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     Optional<Review> findByUserIdAndMediaItemId(UUID userId, UUID mediaItemId);
 
     boolean existsByUserIdAndMediaItemId(UUID userId, UUID mediaItemId);
+
+    @Modifying
+    @Query("delete from Review r where r.user.id = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }

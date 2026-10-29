@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { Mail, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { KeyRound, Loader2, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { SITE } from "@/lib/site";
-import { PageHeader } from "@/components/profile/settingsUi";
+import { useToast } from "@/context/ToastContext";
+import { apiErrorMessage, profileApi } from "@/lib/api";
+import { INPUT, PageHeader } from "@/components/profile/settingsUi";
 
-// Matches the deletion process described in the Privacy Policy (an emailed request handled by us)
+// Matches the deletion process described in the Privacy Policy
 const CARDS = [
   {
     icon: Trash2,
@@ -15,10 +17,10 @@ const CARDS = [
     body: "Your profile, reviews, comments, likes, watch history and collections are permanently deleted.",
   },
   {
-    icon: Mail,
+    icon: KeyRound,
     tone: "bg-purple-500/15 text-purple-300 border-purple-500/25",
-    title: "We confirm by email first",
-    body: "Your request goes to our team from your email app. We reply to the address on your account before anything is deleted.",
+    title: "Confirm with your password",
+    body: "Enter your password to prove it's you. Your account is deleted right away and you're signed out.",
   },
   {
     icon: RotateCcw,
@@ -29,23 +31,41 @@ const CARDS = [
   {
     icon: ShieldCheck,
     tone: "bg-amber-700/20 text-amber-500 border-amber-700/30",
-    title: "Some records may be kept",
-    body: "Where the law requires it, we keep limited records, such as moderation history, for as long as needed.",
+    title: "Your username is freed",
+    body: "Your username becomes available to others. Likes and comments people left on your reviews go with them.",
   },
 ];
 
 export default function DeleteAccountPage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const { showToast } = useToast();
+  const router = useRouter();
   const [agreed, setAgreed] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   if (!user) return null;
 
-  // shortcut: there is no delete-account endpoint yet, so this opens a pre-filled email request instead
-  const mailto = `mailto:${SITE.supportEmail}?subject=${encodeURIComponent("Account deletion request")}&body=${encodeURIComponent(
-    `Please delete my Verdikt account.\n\nUsername: @${user.username}\nEmail: ${user.email}\n`
-  )}`;
+  const ready = agreed && password.length > 0 && !deleting;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ready) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await profileApi.deleteAccount(password);
+      logout();
+      router.replace("/");
+      showToast("Your account was deleted", { detail: "Thanks for being part of Verdikt." });
+    } catch (err) {
+      setError(apiErrorMessage(err, "Couldn't delete your account. Please try again."));
+      setDeleting(false);
+    }
+  };
 
   return (
-    <div>
+    <form onSubmit={submit}>
       <PageHeader title="Delete Account">
         Deleting your account is permanent. Please read what happens before you continue.
       </PageHeader>
@@ -77,26 +97,36 @@ export default function DeleteAccountPage() {
         I understand that my account and everything in it will be permanently deleted and can&apos;t be recovered.
       </label>
 
-      <div className="mt-6 flex justify-end">
-        {agreed ? (
-          <a
-            href={mailto}
-            className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-2.5 rounded-full transition-colors outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
-          >
-            <Trash2 className="w-4 h-4" aria-hidden="true" />
-            Proceed to Delete
-          </a>
-        ) : (
-          <button
-            type="button"
-            disabled
-            className="inline-flex items-center gap-2 bg-white/[0.06] text-zinc-500 font-semibold px-6 py-2.5 rounded-full cursor-not-allowed"
-          >
-            <Trash2 className="w-4 h-4" aria-hidden="true" />
-            Proceed to Delete
-          </button>
-        )}
+      <label htmlFor="delete-password" className="mt-6 block text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+        Your Password
+      </label>
+      <input
+        id="delete-password"
+        type="password"
+        value={password}
+        onChange={(e) => {
+          setPassword(e.target.value);
+          setError(null);
+        }}
+        autoComplete="current-password"
+        aria-invalid={!!error}
+        aria-describedby="delete-error"
+        className={INPUT}
+      />
+      <p id="delete-error" className="mt-2 text-sm text-red-400 min-h-5" aria-live="polite">
+        {error}
+      </p>
+
+      <div className="mt-4 flex justify-end">
+        <button
+          type="submit"
+          disabled={!ready}
+          className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-2.5 rounded-full transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:bg-white/[0.06] disabled:text-zinc-500 disabled:cursor-not-allowed"
+        >
+          {deleting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Trash2 className="w-4 h-4" aria-hidden="true" />}
+          {deleting ? "Deleting…" : "Delete My Account"}
+        </button>
       </div>
-    </div>
+    </form>
   );
 }

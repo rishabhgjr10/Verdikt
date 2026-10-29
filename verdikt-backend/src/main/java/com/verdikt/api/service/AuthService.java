@@ -48,7 +48,7 @@ public class AuthService {
                 .username(request.getUsername().trim())
                 .email(request.getEmail().trim().toLowerCase())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .avatarUrl("https://api.dicebear.com/7.x/avataaars/svg?seed=" + request.getUsername().trim())
+                .avatarUrl(Avatars.defaultFor(request.getUsername().trim()))
                 .build();
 
         User savedUser = userRepository.save(user);

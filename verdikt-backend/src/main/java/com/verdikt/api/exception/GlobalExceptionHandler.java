@@ -48,6 +48,19 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, "Malformed request.");
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleUploadTooLarge(Exception ex) {
+        return buildResponse(HttpStatus.PAYLOAD_TOO_LARGE, "That photo is too large. Pick one under 5 MB.");
+    }
+
+    @ExceptionHandler({
+            org.springframework.web.multipart.MultipartException.class,
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class
+    })
+    public ResponseEntity<Map<String, Object>> handleBadUpload(Exception ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "Choose a photo to upload.");
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());

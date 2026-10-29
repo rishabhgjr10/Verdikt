@@ -7,8 +7,8 @@ import { CollectionSummary, MediaItem, MediaType, ReviewWithRelations, Verdict }
 import { collectionsApi, reviewApi, userMediaApi } from "@/lib/api";
 import { SlidingPill } from "@/components/ui/SlidingPill";
 import { verdictOption, VERDICT_OPTIONS } from "@/components/reviews/verdicts";
-import { InstagramIcon, YouTubeIcon } from "@/components/profile/SocialIcons";
-import { PROFILE_PLACEHOLDER, useSignedInUser } from "@/components/profile/profileData";
+import { InstagramIcon, XIcon, YouTubeIcon } from "@/components/profile/SocialIcons";
+import { displayName, joinedLabel, useSignedInUser } from "@/components/profile/profileData";
 
 const GLASS = "bg-[#0f0f11]/80 backdrop-blur-xl border border-white/[0.08]";
 const TYPE_LABELS: Record<MediaType, string> = { MOVIE: "Movie", SERIES: "Series", ANIME: "Anime", GAME: "Game", BOOK: "Book" };
@@ -165,7 +165,7 @@ export default function ProfilePage() {
   );
 
   if (!user) return null;
-  const p = PROFILE_PLACEHOLDER;
+  const joined = joinedLabel(user.createdAt);
   const publicCollections = (collections ?? []).filter((c) => c.isPublic).length;
 
   return (
@@ -176,9 +176,7 @@ export default function ProfilePage() {
           <div className="mb-4">
             <Avatar url={user.avatarUrl} size="w-24 h-24" />
           </div>
-          <h1 className="text-xl font-bold text-white">
-            {p.firstName} {p.lastName}
-          </h1>
+          <h1 className="text-xl font-bold text-white break-words">{displayName(user)}</h1>
           <p className="text-sm text-zinc-400 mb-6">@{user.username}</p>
 
           <dl className="w-full grid grid-cols-2 gap-3">
@@ -193,30 +191,39 @@ export default function ProfilePage() {
             </div>
           </dl>
 
-          <p className="mt-6 text-sm text-zinc-300">{p.bio}</p>
+          {user.bio ? (
+            <p className="mt-6 text-sm text-zinc-300 whitespace-pre-line break-words">{user.bio}</p>
+          ) : (
+            <Link href="/settings/profile" className="mt-6 text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+              Add a bio
+            </Link>
+          )}
 
           <div className="mt-4 w-full space-y-2 text-sm text-zinc-400">
             <p className="flex items-center justify-center gap-2">
               <Users className="w-4 h-4" aria-hidden="true" />
               <span>
-                <strong className="text-white font-semibold">{p.followers}</strong> Followers
+                <strong className="text-white font-semibold">0</strong> Followers
               </span>
               <span aria-hidden="true">·</span>
               <span>
-                <strong className="text-white font-semibold">{p.following}</strong> Following
+                <strong className="text-white font-semibold">0</strong> Following
               </span>
             </p>
-            <p className="flex items-center justify-center gap-2">
-              <CalendarDays className="w-4 h-4" aria-hidden="true" />
-              {p.joined}
-            </p>
+            {joined && (
+              <p className="flex items-center justify-center gap-2">
+                <CalendarDays className="w-4 h-4" aria-hidden="true" />
+                {joined}
+              </p>
+            )}
           </div>
 
           {/* Socials appear once links are added in Edit Profile */}
           <div className="mt-4 flex gap-3 text-zinc-500">
             {[
-              { label: "Instagram", Icon: InstagramIcon, href: p.instagram },
-              { label: "YouTube", Icon: YouTubeIcon, href: p.youtube },
+              { label: "Instagram", Icon: InstagramIcon, href: user.instagramUrl },
+              { label: "X", Icon: XIcon, href: user.xUrl },
+              { label: "YouTube", Icon: YouTubeIcon, href: user.youtubeUrl },
             ].map(({ label, Icon, href }) =>
               href ? (
                 <a key={label} href={href} target="_blank" rel="noopener noreferrer" aria-label={label} className="hover:text-white transition-colors">

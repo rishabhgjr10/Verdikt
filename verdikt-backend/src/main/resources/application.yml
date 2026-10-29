@@ -20,6 +20,12 @@ spring:
       connection-test-query: SELECT 1
       keepalive-time: 60000
 
+  # Profile photo uploads (the browser shrinks them first; AvatarImages re-encodes to a small JPEG)
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
   jpa:
     hibernate:
       ddl-auto: ${HIBERNATE_DDL_AUTO:update}

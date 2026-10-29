@@ -231,11 +231,11 @@ function HomeHero({
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent z-10 md:hidden" />
 
         {/* Phones: the banner grows with its content, and pt-40 leaves the backdrop visible above the text */}
-        <div className="relative z-20 w-full max-w-2xl px-6 pt-40 pb-14 md:py-0 md:px-16 flex flex-col gap-3 md:gap-4">
+        <div className="relative z-20 w-full max-w-2xl px-5 pt-36 pb-12 md:py-0 md:px-16 flex flex-col gap-2.5 md:gap-4">
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.08] backdrop-blur-md border border-white/[0.1] text-[10px] md:text-xs font-bold text-white uppercase tracking-widest w-max mb-1 md:mb-2">
             {active.badge}
           </span>
-          <h2 id="home-hero-title" className="text-4xl md:text-6xl font-black text-white leading-tight drop-shadow-xl line-clamp-2">
+          <h2 id="home-hero-title" className="text-3xl md:text-6xl font-black text-white leading-tight drop-shadow-xl line-clamp-2">
             {item?.title ?? "Games"}
           </h2>
           {meta.length > 0 && (
@@ -260,11 +260,11 @@ function HomeHero({
             <p className="text-sm md:text-base text-zinc-300 italic leading-relaxed line-clamp-2 max-w-xl">{item.description}</p>
           )}
           {item && !isGame && (
-            <div className="flex flex-wrap items-center gap-3 md:gap-4 mt-2 md:mt-4">
+            <div className="flex items-center gap-2.5 md:gap-4 mt-2 md:mt-4">
               <Link
                 href={getItemHref(item)}
                 onClick={(e) => e.stopPropagation()}
-                className="bg-white text-black hover:bg-zinc-200 px-6 md:px-8 py-3 rounded-full font-bold transition-all transform hover:scale-105 motion-reduce:hover:scale-100 outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+                className="bg-white text-black hover:bg-zinc-200 px-5 md:px-8 py-2.5 md:py-3 text-sm md:text-base whitespace-nowrap rounded-full font-bold transition-all transform hover:scale-105 motion-reduce:hover:scale-100 outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
               >
                 Read Verdicts
               </Link>
@@ -275,10 +275,11 @@ function HomeHero({
                     e.stopPropagation();
                     onTrailer(item);
                   }}
-                  className="bg-white/[0.08] hover:bg-white/[0.15] backdrop-blur-md border border-white/[0.1] text-white px-6 md:px-8 py-3 rounded-full font-bold flex items-center gap-2 transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  className="bg-white/[0.08] hover:bg-white/[0.15] backdrop-blur-md border border-white/[0.1] text-white px-5 md:px-8 py-2.5 md:py-3 text-sm md:text-base whitespace-nowrap rounded-full font-bold flex items-center gap-2 transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 >
                   <Play className="w-4 h-4 fill-current" aria-hidden="true" />
-                  Watch Trailer
+                  {/* "Watch" drops on phones so both buttons fit on one row */}
+                  <span className="hidden sm:inline">Watch</span> Trailer
                 </button>
               )}
             </div>

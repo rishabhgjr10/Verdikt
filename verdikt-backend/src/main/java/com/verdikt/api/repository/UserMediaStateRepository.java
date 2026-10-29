@@ -3,6 +3,7 @@ package com.verdikt.api.repository;
 import com.verdikt.api.UserMediaState;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -31,4 +32,8 @@ public interface UserMediaStateRepository extends JpaRepository<UserMediaState, 
             + "where s.watchLater = true "
             + "group by s.mediaId order by count(s) desc, max(s.watchLaterAt) desc")
     List<Object[]> countInterestAllTime(Pageable pageable);
+
+    @Modifying
+    @Query("delete from UserMediaState s where s.userId = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }

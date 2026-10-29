@@ -20,6 +20,8 @@ import {
   RatingSource,
   ReviewComment,
   ReviewWithRelations,
+  UpdateProfilePayload,
+  User,
   WatchedResult,
 } from "@/types/media";
 
@@ -64,6 +66,31 @@ export const authApi = {
   register: async (data: { username: string; email: string; password: string }): Promise<AuthResponse> => {
     const response = await api.post<AuthResponse>("/auth/register", data);
     return response.data;
+  },
+};
+
+/** The server's message for a failed request, or the fallback */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+  return typeof message === "string" && message.trim() ? message : fallback;
+}
+
+/** The signed-in user's own account */
+export const profileApi = {
+  me: async (): Promise<User> => (await api.get<User>("/me/profile")).data,
+  update: async (data: UpdateProfilePayload): Promise<User> => (await api.put<User>("/me/profile", data)).data,
+  uploadAvatar: async (photo: Blob): Promise<User> => {
+    const form = new FormData();
+    form.append("file", photo, "avatar.jpg");
+    // Overrides the JSON default; axios fills in the multipart boundary
+    return (await api.put<User>("/me/avatar", form, { headers: { "Content-Type": "multipart/form-data" } })).data;
+  },
+  removeAvatar: async (): Promise<User> => (await api.delete<User>("/me/avatar")).data,
+  /** Returns a fresh session: the old token stops working once the username changes */
+  changeUsername: async (username: string): Promise<AuthResponse> =>
+    (await api.put<AuthResponse>("/me/username", { username })).data,
+  deleteAccount: async (password: string): Promise<void> => {
+    await api.delete("/me", { data: { password } });
   },
 };
 

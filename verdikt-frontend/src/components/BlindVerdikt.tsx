@@ -4,12 +4,14 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Bookmark, Check, Dices, Lock, PenLine, Play, Shuffle, Star, X, Zap } from "lucide-react";
+import { ArrowLeft, Bookmark, Check, Dices, Eye, EyeOff, Lock, PenLine, Play, Shuffle, Star, X, Zap } from "lucide-react";
+import { CollectionsSheet } from "@/components/CollectionsSheet";
+import { GlassConfirmDialog } from "@/components/GlassConfirmDialog";
 import { PosterImage } from "@/components/PosterImage";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { mediaApi, reviewApi, userMediaApi } from "@/lib/api";
+import { collectionsApi, mediaApi, reviewApi, userMediaApi } from "@/lib/api";
 import { CURATED_WORTH_READING } from "@/lib/discovery";
 import {
   fetchTmdbHeroDetails,
@@ -281,6 +283,10 @@ export function BlindVerdikt() {
   const [showAll, setShowAll] = useState(false);
   const [dealing, setDealing] = useState(false);
   const [marking, setMarking] = useState(false);
+  /** Card waiting on "this deletes your review" before it is unmarked */
+  const [unwatchConfirm, setUnwatchConfirm] = useState<BlindCard | null>(null);
+  /** Cards whose title the signed-in user has reviewed (unmarking deletes that review) */
+  const [liveHasReview, setLiveHasReview] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   /** Status line under the card (trailer not found, reset done); confirmations go to toasts instead */
   const [note, setNote] = useState<{ text: string } | null>(null);
@@ -292,7 +298,13 @@ export function BlindVerdikt() {
   /** Live watched state from the API, keyed by card; wins over the local watchedIds when present */
   const [liveWatched, setLiveWatched] = useState<Record<string, boolean>>({});
   const [liveLater, setLiveLater] = useState<Record<string, boolean>>({});
+  /** The user's collections that already hold each card's title */
+  const [liveCollections, setLiveCollections] = useState<Record<string, string[]>>({});
+  /** Watch History and other locked lists: marking watched adds to them, so they don't count as "saved" */
+  const [systemCollectionIds, setSystemCollectionIds] = useState<Set<string>>(new Set());
   const [savingLater, setSavingLater] = useState(false);
+  const [collectionsFor, setCollectionsFor] = useState<{ card: BlindCard; mediaId: string } | null>(null);
+  const [openingCollections, setOpeningCollections] = useState(false);
   const { showToast } = useToast();
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -315,7 +327,8 @@ export function BlindVerdikt() {
     saveState(next);
   };
 
-  useFocusTrap(panelRef, open, () => setOpen(false));
+  // The collections sheet and confirm dialog have their own traps; this one steps aside so Tab and Escape reach them
+  useFocusTrap(panelRef, open && !collectionsFor && !unwatchConfirm, () => setOpen(false));
 
   // Ticks the cooldown and lets an expired cycle refill while the page stays open
   useEffect(() => {
@@ -329,6 +342,12 @@ export function BlindVerdikt() {
   useEffect(() => {
     if (!open || !user) return;
     let cancelled = false;
+    collectionsApi
+      .list()
+      .then((all) => !cancelled && setSystemCollectionIds(new Set(all.filter((c) => c.isSystem).map((c) => c.id))))
+      .catch(() => {
+        // Unknown: the bookmark may show filled for Watch History until the next open
+      });
     const sync = async () => {
       const cards = loadState().todayDraws.filter((d) => d.type === deck);
       const results = await Promise.all(
@@ -336,7 +355,7 @@ export function BlindVerdikt() {
           try {
             const mediaId = await resolveMediaId(card);
             const live = await userMediaApi.getState(mediaId);
-            return { card, mediaId, watched: live.watched, later: live.watchLater };
+            return { card, mediaId, watched: live.watched, later: live.watchLater, collections: live.collectionIds, reviewed: live.hasReview };
           } catch {
             return null; // Unknown stays on the local fallback
           }
@@ -346,6 +365,8 @@ export function BlindVerdikt() {
       const found = results.filter((r) => r !== null);
       setLiveWatched((prev) => ({ ...prev, ...Object.fromEntries(found.map((r) => [r.card.key, r.watched])) }));
       setLiveLater((prev) => ({ ...prev, ...Object.fromEntries(found.map((r) => [r.card.key, r.later])) }));
+      setLiveCollections((prev) => ({ ...prev, ...Object.fromEntries(found.map((r) => [r.card.key, r.collections ?? []])) }));
+      setLiveHasReview((prev) => ({ ...prev, ...Object.fromEntries(found.map((r) => [r.card.key, !!r.reviewed])) }));
       // Keep the ids so the next check skips the import
       const base = loadState();
       const ids = new Map(found.map((r) => [r.card.key, r.mediaId]));
@@ -457,6 +478,46 @@ export function BlindVerdikt() {
     setMarking(false);
   };
 
+  /**
+   * Undoes "Mark as Watched" (e.g. a mis-tap): off the watched list and Watch History, and the save button goes back
+   * to Watch Later. The server also deletes the user's review of the title, so that case asks first.
+   */
+  const unmarkWatched = async (card: BlindCard, confirmed = false) => {
+    if (dealing || marking) return;
+    if (user && !confirmed && liveHasReview[card.key]) {
+      setUnwatchConfirm(card);
+      return;
+    }
+    setMarking(true);
+    setError(null);
+    setNote(null);
+    try {
+      if (user) {
+        const mediaId = await resolveMediaId(card);
+        const result = await userMediaApi.setWatched(mediaId, false);
+        setLiveWatched((prev) => ({ ...prev, [card.key]: false }));
+        setLiveLater((prev) => ({ ...prev, [card.key]: result.watchLater }));
+        setLiveHasReview((prev) => ({ ...prev, [card.key]: false }));
+        showToast(card.type === "BOOK" ? "Marked as unread" : "Marked as unwatched", {
+          detail: result.deletedReview ? "Removed from Watch History. Your review was deleted." : "Removed from Watch History.",
+        });
+      }
+      const base = refresh(loadState());
+      update({ ...base, watchedIds: base.watchedIds.filter((k) => k !== card.key) });
+    } catch (err) {
+      showToast("Couldn't update it", {
+        tone: "error",
+        detail:
+          axios.isAxiosError(err) && err.response?.status === 401
+            ? "Your session expired. Sign in again."
+            : "Nothing was changed. Please try again.",
+      });
+    } finally {
+      setMarking(false);
+      setUnwatchConfirm(null);
+    }
+  };
+
   /** The mulligan: swaps a watched card for a new one from the same deck without spending a daily draw. */
   const dealReplacement = (card: BlindCard) => {
     setNote(null);
@@ -483,6 +544,24 @@ export function BlindVerdikt() {
       showToast("Couldn't update Watch Later", { tone: "error", detail: "Nothing was changed. Please try again." });
     } finally {
       setSavingLater(false);
+    }
+  };
+
+  /** Watched titles can still be kept: opens the same collections sheet as the title page */
+  const openCollections = async (card: BlindCard) => {
+    if (!user) {
+      setOpen(false);
+      router.push(buildAuthHref("/login"));
+      return;
+    }
+    if (openingCollections) return;
+    setOpeningCollections(true);
+    try {
+      setCollectionsFor({ card, mediaId: await resolveMediaId(card) });
+    } catch {
+      showToast("Couldn't open your collections", { tone: "error", detail: "Please try again." });
+    } finally {
+      setOpeningCollections(false);
     }
   };
 
@@ -540,23 +619,40 @@ export function BlindVerdikt() {
   const canRedraw = unlimited || current.watchedRedrawsRemaining > 0;
   /** A watched card can be swapped for free from the main shuffle button while redraws are left (even at 0/3) */
   const freeRedraw = !!focused && isWatched(focused) && canRedraw;
+  const savedToCollection = (card: BlindCard) => (liveCollections[card.key] ?? []).some((id) => !systemCollectionIds.has(id));
   const cardActions = (card: BlindCard) => {
     const watched = isWatched(card);
     const later = !!liveLater[card.key];
     return (
       <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
         {!watched ? (
+          // Red until marked, so it reads as an action to take rather than a status already set
           <button
             type="button"
             onClick={() => markWatched(card)}
             disabled={marking}
-            className={`${pillBase} border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-wait disabled:opacity-60 cursor-pointer`}
+            className={`${pillBase} border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:border-rose-500/60 disabled:cursor-wait disabled:opacity-60 cursor-pointer`}
           >
-            <Check className="h-3.5 w-3.5" aria-hidden />
-            {marking ? "Saving…" : card.type === "BOOK" ? "Already Read" : "Already Watched"}
+            <Eye className="h-3.5 w-3.5" aria-hidden />
+            {marking ? "Saving…" : card.type === "BOOK" ? "Mark as Read" : "Mark as Watched"}
           </button>
         ) : (
-          // Watched: the verdict takes the button's place while the title is fresh in mind
+          // Green once marked; clicking undoes it (the icon turns into "unwatch" on hover so the click isn't a surprise)
+          <button
+            type="button"
+            onClick={() => unmarkWatched(card)}
+            disabled={marking}
+            aria-label={card.type === "BOOK" ? "Read. Mark as unread" : "Watched. Mark as unwatched"}
+            title={card.type === "BOOK" ? "Mark as unread" : "Mark as unwatched"}
+            className={`group/watched ${pillBase} border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:border-rose-500/50 hover:bg-rose-500/10 hover:text-rose-300 disabled:cursor-wait disabled:opacity-60 cursor-pointer`}
+          >
+            <Check className="h-3.5 w-3.5 group-hover/watched:hidden" aria-hidden />
+            <EyeOff className="hidden h-3.5 w-3.5 group-hover/watched:block" aria-hidden />
+            {marking ? "Saving…" : card.type === "BOOK" ? "Read" : "Watched"}
+          </button>
+        )}
+        {watched && (
+          // Watched: the verdict joins in while the title is fresh in mind
           <button
             type="button"
             onClick={() => {
@@ -581,8 +677,23 @@ export function BlindVerdikt() {
             {loadingTrailer ? "Finding…" : "Trailer"}
           </button>
         )}
-        {/* Watch Later is for titles still to see; the server refuses it for watched ones */}
-        {!watched && (
+        {/* Watch Later is for titles still to see (the server refuses it for watched ones); once watched, save to a collection */}
+        {watched ? (
+          <button
+            type="button"
+            onClick={() => openCollections(card)}
+            disabled={openingCollections}
+            aria-label="Save to a collection"
+            title="Save to a collection"
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition-all disabled:cursor-wait disabled:opacity-60 cursor-pointer ${
+              savedToCollection(card)
+                ? "border-purple-400/60 bg-purple-500/25 text-purple-100"
+                : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+            }`}
+          >
+            <Bookmark className={`h-4 w-4 ${savedToCollection(card) ? "fill-current" : ""}`} aria-hidden />
+          </button>
+        ) : (
           <button
             type="button"
             onClick={() => toggleLater(card)}
@@ -876,6 +987,29 @@ export function BlindVerdikt() {
           </div>,
           document.body
         )}
+      <GlassConfirmDialog
+        open={!!unwatchConfirm}
+        layerClassName="z-[110]"
+        title={unwatchConfirm?.type === "BOOK" ? "Mark as unread?" : "Mark as unwatched?"}
+        description="This also deletes the review you wrote for this title."
+        confirmLabel={unwatchConfirm?.type === "BOOK" ? "Mark as Unread" : "Mark as Unwatched"}
+        confirmVariant="danger"
+        loading={marking}
+        onConfirm={() => unwatchConfirm && unmarkWatched(unwatchConfirm, true)}
+        onClose={() => setUnwatchConfirm(null)}
+      />
+      {collectionsFor && (
+        <CollectionsSheet
+          open
+          layerClassName="z-[110]"
+          onClose={() => setCollectionsFor(null)}
+          mediaId={collectionsFor.mediaId}
+          mediaTitle={collectionsFor.card.title}
+          watched={isWatched(collectionsFor.card)}
+          collectionIds={liveCollections[collectionsFor.card.key] ?? []}
+          onCollectionsChange={(ids) => setLiveCollections((prev) => ({ ...prev, [collectionsFor.card.key]: ids }))}
+        />
+      )}
     </>
   );
 }

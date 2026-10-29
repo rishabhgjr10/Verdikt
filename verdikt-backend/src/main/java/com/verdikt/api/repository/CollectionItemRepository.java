@@ -2,6 +2,7 @@ package com.verdikt.api.repository;
 
 import com.verdikt.api.CollectionItem;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -26,4 +27,8 @@ public interface CollectionItemRepository extends JpaRepository<CollectionItem, 
             // Newest first: the media page labels its Collections button with the latest collection
             + "order by ci.addedAt desc")
     List<UUID> findCollectionIdsContaining(@Param("userId") UUID userId, @Param("mediaId") UUID mediaId);
+
+    @Modifying
+    @Query("delete from CollectionItem ci where ci.id.collectionId in (select c.id from MediaCollection c where c.userId = :userId)")
+    int deleteAllForUser(@Param("userId") UUID userId);
 }

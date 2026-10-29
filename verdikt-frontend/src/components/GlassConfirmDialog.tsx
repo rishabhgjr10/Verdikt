@@ -16,6 +16,8 @@ export interface GlassConfirmDialogProps {
   loading?: boolean;
   onConfirm: () => void;
   onClose: () => void;
+  /** Stacking layer; raise it when the dialog opens over another modal */
+  layerClassName?: string;
 }
 
 /**
@@ -31,6 +33,7 @@ export function GlassConfirmDialog({
   loading = false,
   onConfirm,
   onClose,
+  layerClassName = "z-[80]",
 }: GlassConfirmDialogProps) {
   const mounted = useIsClient();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -47,7 +50,7 @@ export function GlassConfirmDialog({
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+    <div className={`fixed inset-0 ${layerClassName} flex items-center justify-center p-4`}>
       <div
         className="glass-overlay glass-fade-in absolute inset-0 bg-black/50"
         onClick={requestClose}

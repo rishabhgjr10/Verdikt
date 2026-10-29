@@ -57,6 +57,9 @@ public class SecurityConfig {
                         // Public GET endpoints for reviews
                         .requestMatchers(HttpMethod.GET, "/reviews/**", "/api/reviews/**", "/api/v1/reviews/**").permitAll()
 
+                        // Uploaded profile photos, shown next to public reviews
+                        .requestMatchers(HttpMethod.GET, "/api/avatars/*").permitAll()
+
                         // System / Error / Health endpoints
                         .requestMatchers("/error", "/favicon.ico", "/", "/actuator/**", "/api/health").permitAll()
 

@@ -58,6 +58,8 @@
   .catalog-sidebar-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 }
 @media (max-width: 767px) {
+  /* The desktop width calc plus padding left ~48px gutters on phones */
+  .catalog-content { width: 100%; padding: 0 16px 64px; }
   .catalog-main { gap: 36px; }
   .catalog-poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 12px; }
   .catalog-watch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }
