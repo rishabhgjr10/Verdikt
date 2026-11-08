@@ -48,7 +48,7 @@ import {
   TmdbItem,
   TmdbWatchProvider,
   WatchOffer,
-  voteToVerdict,
+  audienceVerdict,
 } from "@/lib/tmdb";
 import {
   Play,
@@ -712,8 +712,11 @@ export default function MediaDetailPage({
       const top = [...counts].sort((a, b) => b[1] - a[1])[0][0];
       return { verdict: top, source: `Community verdict from ${reviews.length} member review${reviews.length === 1 ? "" : "s"}` };
     }
-    if (heroDetails?.voteAverage != null) {
-      return { verdict: voteToVerdict(heroDetails.voteAverage), source: "Verdict from audience ratings" };
+    const audience = heroDetails
+      ? audienceVerdict({ voteAverage: heroDetails.voteAverage, voteCount: heroDetails.voteCount, releaseDate: heroDetails.releaseDate })
+      : null;
+    if (audience) {
+      return { verdict: audience, source: "Verdict from audience ratings" };
     }
     return null;
   })();
@@ -1121,7 +1124,8 @@ export default function MediaDetailPage({
                   const isCurrent = String(part.id) === String(mediaItem.externalId);
                   const partPoster = sanitizeImageUrl(part.poster_path);
                   const partYear = part.release_date ? part.release_date.slice(0, 4) : "TBA";
-                  const cfg = VERDICT_CONFIG[voteToVerdict(part.vote_average)];
+                  const partVerdict = audienceVerdict({ voteAverage: part.vote_average, voteCount: part.vote_count, releaseDate: part.release_date });
+                  const cfg = partVerdict ? VERDICT_CONFIG[partVerdict] : null;
                   const prev = saga[i - 1];
                   const next = saga[i + 1];
                   const segment = (laser: boolean, cls: string) =>
@@ -1159,7 +1163,7 @@ export default function MediaDetailPage({
                               Upcoming
                             </div>
                           ) : (
-                            (part.vote_count ?? 0) > 0 && (
+                            cfg && (
                               <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-white/10 flex items-center gap-1 shadow z-10 pointer-events-none">
                                 <span className={`text-[9px] font-semibold leading-none ${cfg.textClass}`}>{cfg.label}</span>
                               </div>
@@ -1256,8 +1260,12 @@ export default function MediaDetailPage({
                   const recYear =
                     (rec.release_date || rec.first_air_date || "").slice(0, 4) ||
                     "TBA";
-                  const recVerdict = voteToVerdict(rec.vote_average);
-                  const cfg = VERDICT_CONFIG[recVerdict];
+                  const recVerdict = audienceVerdict({
+                    voteAverage: rec.vote_average,
+                    voteCount: rec.vote_count,
+                    releaseDate: rec.release_date || rec.first_air_date,
+                  });
+                  const cfg = recVerdict ? VERDICT_CONFIG[recVerdict] : null;
                   const recType =
                     rec.media_type === "tv" ? "SERIES" : "MOVIE";
 
@@ -1274,8 +1282,8 @@ export default function MediaDetailPage({
                         releaseYear={recYear}
                         className="border-white/10 group-hover:border-white/20 transition-transform duration-300 group-hover:-translate-y-1 motion-reduce:group-hover:translate-y-0"
                       >
-                        {/* Verdict Chip: only once there are votes */}
-                        {(rec.vote_count ?? 0) > 0 && (
+                        {/* Verdict Chip: only once the shared rule gives one */}
+                        {cfg && (
                         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-white/10 flex items-center gap-1 shadow z-10 pointer-events-none">
                           <span
                             className={`text-[9px] font-semibold leading-none ${cfg.textClass}`}

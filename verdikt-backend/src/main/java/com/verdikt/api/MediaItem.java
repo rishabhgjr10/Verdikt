@@ -85,7 +85,30 @@ public class MediaItem {
     @Column(name = "ratings_fetched_at")
     private Instant ratingsFetchedAt;
 
+    /** TMDB vote_average / vote_count from the provider (never from client-sent details); null until known */
+    @Column(name = "vote_average")
+    private Double voteAverage;
+
+    @Column(name = "vote_count")
+    private Integer voteCount;
+
     public MediaItem() {
+    }
+
+    public Double getVoteAverage() {
+        return voteAverage;
+    }
+
+    public void setVoteAverage(Double voteAverage) {
+        this.voteAverage = voteAverage;
+    }
+
+    public Integer getVoteCount() {
+        return voteCount;
+    }
+
+    public void setVoteCount(Integer voteCount) {
+        this.voteCount = voteCount;
     }
 
     public MediaItem(UUID id, String externalId, MediaType mediaType, String title, Integer releaseYear,

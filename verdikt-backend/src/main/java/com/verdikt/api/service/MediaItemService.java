@@ -29,9 +29,9 @@ public class MediaItemService {
     private final MediaItemRepository mediaItemRepository;
     private final UnifiedMediaSearchService unifiedMediaSearchService;
     private final ConcurrentHashMap<String, Object> importLocks = new ConcurrentHashMap<>();
-    private final Set<UUID> releaseDateBackfillAttempted = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> detailsBackfillAttempted = ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.ExecutorService backfillExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "release-date-backfill");
+        Thread t = new Thread(r, "media-details-backfill");
         t.setDaemon(true);
         return t;
     });
@@ -103,8 +103,9 @@ public class MediaItemService {
                               && local.getExternalId().equals(ext.getExternalId())
                               && local.getMediaType() == ext.getMediaType()).findFirst();
                 if (localMatch.isPresent()) {
-                    // Saved rows have no live popularity, so keep the provider's for search ranking
+                    // Saved rows have no live popularity or score, so keep the provider's for ranking and the verdict
                     localMatch.get().setVoteCount(ext.getVoteCount());
+                    localMatch.get().setVoteAverage(ext.getVoteAverage());
                     localMatch.get().setPopularity(ext.getPopularity());
                 } else {
                     results.add(ext);
@@ -127,26 +128,48 @@ public class MediaItemService {
      * Best effort: at most one provider call per item per process, failures are only logged.
      */
     /** Fire-and-forget variant so a slow provider never delays the media page response. */
-    public void backfillReleaseDateAsync(UUID id) {
-        if (releaseDateBackfillAttempted.contains(id)) {
+    public void backfillMissingDetailsAsync(UUID id) {
+        if (id == null || detailsBackfillAttempted.contains(id)) {
             return;
         }
-        backfillExecutor.execute(() -> backfillReleaseDateIfMissing(id));
+        backfillExecutor.execute(() -> backfillMissingDetails(id));
     }
 
-    public void backfillReleaseDateIfMissing(UUID id) {
+    /** Library/collection lists: rows imported before scores were stored get theirs on first view */
+    public void backfillScoresAsync(List<MediaItemDTO> items) {
+        items.stream().filter(d -> d.getVoteAverage() == null).forEach(d -> backfillMissingDetailsAsync(d.getId()));
+    }
+
+    /** Fills a missing release date and, for TMDB titles, the audience score; once per id per run */
+    public void backfillMissingDetails(UUID id) {
         MediaItem item = mediaItemRepository.findById(id).orElse(null);
-        if (item == null || item.getReleaseDate() != null || !releaseDateBackfillAttempted.add(id)) {
+        if (item == null || !detailsBackfillAttempted.add(id)) {
+            return;
+        }
+        boolean wantsScore = item.getVoteAverage() == null && item.getMediaType() != MediaType.BOOK && item.getMediaType() != MediaType.GAME;
+        if (item.getReleaseDate() != null && !wantsScore) {
             return;
         }
         try {
             MediaItemDTO external = unifiedMediaSearchService.fetchExternalDetails(item.getExternalId(), item.getMediaType());
-            if (external != null && external.getReleaseDate() != null) {
+            if (external == null) {
+                return;
+            }
+            boolean changed = false;
+            if (item.getReleaseDate() == null && external.getReleaseDate() != null) {
                 item.setReleaseDate(external.getReleaseDate());
+                changed = true;
+            }
+            if (wantsScore && external.getVoteAverage() != null) {
+                item.setVoteAverage(external.getVoteAverage());
+                item.setVoteCount(external.getVoteCount());
+                changed = true;
+            }
+            if (changed) {
                 mediaItemRepository.save(item);
             }
         } catch (Exception e) {
-            log.warn("Release date backfill failed for media id={}: {}", id, e.getClass().getSimpleName());
+            log.warn("Details backfill failed for media id={}: {}", id, e.getClass().getSimpleName());
         }
     }
 
@@ -190,7 +213,7 @@ public class MediaItemService {
 
                 // 4. Save with race protection against concurrent insert collisions
                 try {
-                    return saveDTOToEntity(externalDto);
+                    return saveDTOToEntity(externalDto, true);
                 } catch (DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException e) {
                     log.warn("Concurrent insert collision for externalId='{}' (resolvedType={}), re-fetching: {}",
                             externalId, resolvedType, e.getMessage());
@@ -222,7 +245,7 @@ public class MediaItemService {
             }
         }
         try {
-            return saveDTOToEntity(dto);
+            return saveDTOToEntity(dto, false);
         } catch (DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException e) {
             log.warn("Concurrent insert collision in getOrCreateFromDTO for externalId='{}', re-fetching", dto.getExternalId());
             return mediaItemRepository.findByExternalIdAndMediaType(dto.getExternalId(), dto.getMediaType())
@@ -240,7 +263,8 @@ public class MediaItemService {
         }
     }
 
-    private MediaItem saveDTOToEntity(MediaItemDTO dto) {
+    /** providerData: the score is copied only from provider responses, never from client-sent mediaDetails */
+    private MediaItem saveDTOToEntity(MediaItemDTO dto, boolean providerData) {
         MediaItem entity = MediaItem.builder()
                 .externalId(dto.getExternalId())
                 .mediaType(dto.getMediaType())
@@ -255,6 +279,10 @@ public class MediaItemService {
                 .platformsJson(dto.getPlatformsJson() != null ? dto.getPlatformsJson() : new ArrayList<>())
                 .releaseDate(dto.getReleaseDate())
                 .build();
+        if (providerData) {
+            entity.setVoteAverage(dto.getVoteAverage());
+            entity.setVoteCount(dto.getVoteCount());
+        }
 
         log.info("Persisting new MediaItem to MySQL verdikt_db: title='{}', externalId='{}', type={}",
                 entity.getTitle(), entity.getExternalId(), entity.getMediaType());

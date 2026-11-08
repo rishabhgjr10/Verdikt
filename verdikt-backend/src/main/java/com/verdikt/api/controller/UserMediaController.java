@@ -2,6 +2,7 @@ package com.verdikt.api.controller;
 
 import com.verdikt.api.dto.MediaItemDTO;
 import com.verdikt.api.exception.BadRequestException;
+import com.verdikt.api.service.MediaItemService;
 import com.verdikt.api.service.MostInterestedService;
 import com.verdikt.api.service.UserMediaService;
 import org.springframework.http.CacheControl;
@@ -29,10 +30,13 @@ public class UserMediaController {
 
     private final UserMediaService userMediaService;
     private final MostInterestedService mostInterestedService;
+    private final MediaItemService mediaItemService;
 
-    public UserMediaController(UserMediaService userMediaService, MostInterestedService mostInterestedService) {
+    public UserMediaController(UserMediaService userMediaService, MostInterestedService mostInterestedService,
+                               MediaItemService mediaItemService) {
         this.userMediaService = userMediaService;
         this.mostInterestedService = mostInterestedService;
+        this.mediaItemService = mediaItemService;
     }
 
     public record ToggleRequest(Boolean value) {
@@ -73,12 +77,16 @@ public class UserMediaController {
 
     @GetMapping("/me/watch-later")
     public List<MediaItemDTO> getWatchLater(@AuthenticationPrincipal UserDetails user) {
-        return userMediaService.getWatchLater(user.getUsername());
+        List<MediaItemDTO> items = userMediaService.getWatchLater(user.getUsername());
+        mediaItemService.backfillScoresAsync(items);
+        return items;
     }
 
     @GetMapping("/me/favorites")
     public List<MediaItemDTO> getFavorites(@AuthenticationPrincipal UserDetails user) {
-        return userMediaService.getFavorites(user.getUsername());
+        List<MediaItemDTO> items = userMediaService.getFavorites(user.getUsername());
+        mediaItemService.backfillScoresAsync(items);
+        return items;
     }
 
     @GetMapping("/media/most-interested")

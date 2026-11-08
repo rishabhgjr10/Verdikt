@@ -1,8 +1,18 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
+
+/** Past this, the backend is most likely a sleeping free-tier instance waking up (about 20 s) */
+const SLOW_MS = 3500;
 
 export function MediaDetailSkeleton() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), SLOW_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div className="min-h-screen text-zinc-100 flex flex-col relative overflow-hidden">
       {/* Top Route Progress Bar (nprogress style violet-to-emerald shimmer) */}
@@ -10,6 +20,15 @@ export function MediaDetailSkeleton() {
 
       {/* Cinematic Skeleton Layout */}
       <div className="max-w-[1400px] w-[calc(100%-48px)] mx-auto px-6 pb-10 w-full flex-1 space-y-10">
+        {slow && (
+          <div role="status" className="flex items-center gap-3 rounded-2xl border border-purple-400/25 bg-purple-500/10 px-4 py-3 text-sm text-purple-100">
+            <Loader2 className="w-4 h-4 shrink-0 animate-spin text-purple-300" aria-hidden="true" />
+            <span>
+              <span className="font-semibold">Waking up the server, about 20 seconds.</span>{" "}
+              <span className="text-purple-200/80">It sleeps when nobody is around; this only happens on the first visit.</span>
+            </span>
+          </div>
+        )}
         {/* Top Hero Banner Skeleton */}
         <div className="relative w-full rounded-2xl border border-white/[0.04] bg-zinc-900/60 p-6 md:p-10 overflow-hidden shadow-2xl backdrop-blur-sm">
           <div className="flex flex-col md:flex-row gap-8 items-start">

@@ -11,7 +11,7 @@ import { mediaApi } from "@/lib/api";
 import {
   sanitizeImageUrl,
   sanitizeBackdropUrl,
-  voteToVerdict,
+  audienceVerdict,
   fetchTrendingMovies,
   fetchTrendingTv,
   fetchTrendingAnime,
@@ -69,16 +69,6 @@ const TYPE_ICON: Record<string, React.ElementType> = {
   GAME: Gamepad2,
   BOOK: BookOpen,
 };
-
-// Fallback deterministic verdict if voteAverage is unavailable
-function titleToVerdict(title: string): Verdict {
-  let hash = 0;
-  for (let i = 0; i < title.length; i++) {
-    hash = ((hash << 5) - hash + title.charCodeAt(i)) | 0;
-  }
-  const tier = Math.abs(hash) % 4;
-  return (["SKIP_IT", "TIMEPASS", "GO_FOR_IT", "PERFECTION"] as Verdict[])[tier];
-}
 
 function getItemHref(item: MediaItem): string {
   const isUuid =
@@ -171,7 +161,7 @@ function HomeHero({
   const active = slides[current];
   const item = active.item;
   const isGame = active.kind === "GAME";
-  const verdict = item?.voteAverage !== undefined ? voteToVerdict(item.voteAverage) : null;
+  const verdict = item ? audienceVerdict(item) : null;
   const meta = item
     ? [HERO_KIND_LABEL[active.kind], item.releaseYear, item.genres.slice(0, 2).join(", ")].filter(Boolean)
     : [];
@@ -356,18 +346,15 @@ function HomeHero({
 
 // ── Poster Card with Frosted Segmented Verdict Chip ──────────────────────────
 interface FeedItem extends MediaItem {
-  voteAverage?: number;
+  voteAverage?: number | null;
   popularity?: number;
   /** Overrides the title-page link (fallback books without a Google volume id) */
   href?: string;
 }
 
 function PosterCard({ item }: { item: FeedItem }) {
-  const verdict =
-    item.voteAverage !== undefined
-      ? voteToVerdict(item.voteAverage)
-      : titleToVerdict(item.title);
-  const cfg = VERDICT_CONFIG[verdict];
+  const verdict = audienceVerdict(item);
+  const cfg = verdict ? VERDICT_CONFIG[verdict] : null;
 
   return (
     <Link href={item.href ?? getItemHref(item)} className="group block cursor-pointer">
@@ -384,26 +371,35 @@ function PosterCard({ item }: { item: FeedItem }) {
         )}
 
         {/* Overlaid Frosted Segmented Verdict Chip */}
-        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
-          <span
-            className="text-[10px] font-semibold leading-none"
-            style={{ color: cfg.color }}
-          >
-            {cfg.label}
-          </span>
-          <div className="flex items-center gap-[2.5px]">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <span
-                key={i}
-                className="inline-block h-1.5 w-[5px] rounded-[1px]"
-                style={{
-                  backgroundColor:
-                    i < cfg.score ? cfg.color : "rgba(255, 255, 255, 0.2)",
-                }}
-              />
-            ))}
+        {/* Books carry no audience score on cards, so an unrated book shows no chip rather than "Not rated yet" */}
+        {(cfg || item.mediaType !== "BOOK") && (
+          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
+            {cfg ? (
+              <>
+                <span
+                  className="text-[10px] font-semibold leading-none"
+                  style={{ color: cfg.color }}
+                >
+                  {cfg.label}
+                </span>
+                <div className="flex items-center gap-[2.5px]">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <span
+                      key={i}
+                      className="inline-block h-1.5 w-[5px] rounded-[1px]"
+                      style={{
+                        backgroundColor:
+                          i < cfg.score ? cfg.color : "rgba(255, 255, 255, 0.2)",
+                      }}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <span className="text-[10px] font-semibold leading-none text-zinc-300">Not rated yet</span>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Hover Sheen */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 pointer-events-none" />

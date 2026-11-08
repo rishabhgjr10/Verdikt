@@ -81,11 +81,34 @@ export function voteToVerdict(vote: number): Verdict {
   return "SKIP_IT";
 }
 
+/** Fewer votes than this and the average is noise (a 1991 cult film with a handful of 9s reads as Perfection) */
+export const MIN_VERDICT_VOTES = 50;
+
+/** Future release date, or no date and a future year */
+export function isUnreleased(t: { releaseDate?: string | null; releaseYear?: number | null }, now = new Date()): boolean {
+  if (t.releaseDate) return t.releaseDate.slice(0, 10) > now.toISOString().slice(0, 10);
+  return t.releaseYear != null && t.releaseYear > now.getFullYear();
+}
+
+/**
+ * The one audience-verdict rule for every card, row and page. null means "Not rated yet": no score, too few votes,
+ * or not released. A missing voteCount means the source didn't report one, so only the average is checked.
+ */
+export function audienceVerdict(
+  t: { voteAverage?: number | null; voteCount?: number | null; releaseDate?: string | null; releaseYear?: number | null },
+  now = new Date()
+): Verdict | null {
+  if (t.voteAverage == null || t.voteAverage <= 0) return null;
+  if (t.voteCount != null && t.voteCount < MIN_VERDICT_VOTES) return null;
+  if (isUnreleased(t, now)) return null;
+  return voteToVerdict(t.voteAverage);
+}
+
 /** Convert raw TMDB item into normalized Verdikt MediaItem with voteAverage attached. */
 export function tmdbToMediaItem(
   item: TmdbItem,
   fallbackType: MediaType = "MOVIE"
-): MediaItem & { voteAverage: number; popularity?: number } {
+): MediaItem & { popularity?: number } {
   const isTv =
     item.media_type === "tv" ||
     Boolean(item.first_air_date) ||
@@ -112,7 +135,9 @@ export function tmdbToMediaItem(
     creatorsJson: null,
     genresJson: null,
     platformsJson: null,
-    voteAverage: item.vote_average ?? 7.0,
+    voteAverage: item.vote_average ?? null,
+    voteCount: item.vote_count ?? null,
+    releaseDate: dateStr || null,
     popularity: item.popularity,
   };
 }
@@ -145,7 +170,7 @@ export function deduplicateFranchises<
     id?: string | number;
     externalId?: string;
     title?: string;
-    voteAverage?: number;
+    voteAverage?: number | null;
     popularity?: number;
   }
 >(items: T[]): T[] {
@@ -350,6 +375,7 @@ export interface TmdbHeroDetails {
   tagline: string | null;
   /** TMDB audience score (0-10), the fallback for the consensus verdict when no member has reviewed */
   voteAverage: number | null;
+  voteCount: number | null;
   /** Billed order, up to 12 */
   cast: TmdbCastCredit[];
   ageRating: string | null;
@@ -423,6 +449,7 @@ export async function fetchTmdbHeroDetails(
     return {
       tagline: d.tagline || null,
       voteAverage: d.vote_count ? d.vote_average : null,
+      voteCount: d.vote_count ?? null,
       cast,
       ageRating,
       releaseDate: (isTv ? d.first_air_date : d.release_date) || null,

@@ -371,6 +371,9 @@ public class TmdbService {
         if (node.hasNonNull("vote_count")) {
             dto.setVoteCount(node.path("vote_count").asInt());
         }
+        if (node.hasNonNull("vote_average")) {
+            dto.setVoteAverage(node.path("vote_average").asDouble());
+        }
         if (node.hasNonNull("popularity")) {
             dto.setPopularity(node.path("popularity").asDouble());
         }

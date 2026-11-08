@@ -3,11 +3,11 @@
 import React from "react";
 import Link from "next/link";
 import { MediaItem, Verdict } from "@/types/media";
-import { voteToVerdict } from "@/lib/tmdb";
+import { audienceVerdict } from "@/lib/tmdb";
 import { PosterImage } from "@/components/PosterImage";
 
 interface MediaCardProps {
-  item: MediaItem & { voteAverage?: number };
+  item: MediaItem & { href?: string };
 }
 
 const VERDICT_CONFIG: Record<
@@ -40,15 +40,6 @@ const VERDICT_CONFIG: Record<
   },
 };
 
-function titleToVerdict(title: string): Verdict {
-  let hash = 0;
-  for (let i = 0; i < title.length; i++) {
-    hash = ((hash << 5) - hash + title.charCodeAt(i)) | 0;
-  }
-  const tier = Math.abs(hash) % 4;
-  return (["SKIP_IT", "TIMEPASS", "GO_FOR_IT", "PERFECTION"] as Verdict[])[tier];
-}
-
 export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
   const isUuid =
     item.id &&
@@ -56,15 +47,15 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
   const extId =
     item.externalId ||
     (item.id?.startsWith("tmdb-") ? item.id.replace("tmdb-", "") : item.id);
-  const cardHref = isUuid
+  // Curated books without a Google volume id link to a book search instead
+  const cardHref = item.href
+    ? item.href
+    : isUuid
     ? `/media/${item.id}`
     : `/media/external/${item.mediaType}/${encodeURIComponent(extId || "")}`;
 
-  const verdict =
-    item.voteAverage !== undefined
-      ? voteToVerdict(item.voteAverage)
-      : titleToVerdict(item.title);
-  const cfg = VERDICT_CONFIG[verdict];
+  const verdict = audienceVerdict(item);
+  const cfg = verdict ? VERDICT_CONFIG[verdict] : null;
 
   return (
     <Link href={cardHref} className="group block">
@@ -77,23 +68,32 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
         className="poster-lift"
       >
         {/* Overlaid Frosted Glass Verdict Chip */}
-        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
-          <span className={`text-[10px] font-semibold leading-none ${cfg.textClass}`}>
-            {cfg.label}
-          </span>
-          <div className="flex items-center gap-[2.5px]">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <span
-                key={i}
-                className="inline-block h-1.5 w-[5px] rounded-[1px]"
-                style={{
-                  backgroundColor:
-                    i < cfg.score ? cfg.color : "rgba(255, 255, 255, 0.2)",
-                }}
-              />
-            ))}
+        {/* Books carry no audience score on cards, so an unrated book shows no chip rather than "Not rated yet" */}
+        {(cfg || item.mediaType !== "BOOK") && (
+          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 flex items-center gap-1.5 shadow-md z-10 pointer-events-none">
+            {cfg ? (
+              <>
+                <span className={`text-[10px] font-semibold leading-none ${cfg.textClass}`}>
+                  {cfg.label}
+                </span>
+                <div className="flex items-center gap-[2.5px]">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <span
+                      key={i}
+                      className="inline-block h-1.5 w-[5px] rounded-[1px]"
+                      style={{
+                        backgroundColor:
+                          i < cfg.score ? cfg.color : "rgba(255, 255, 255, 0.2)",
+                      }}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <span className="text-[10px] font-semibold leading-none text-zinc-300">Not rated yet</span>
+            )}
           </div>
-        </div>
+        )}
       </PosterImage>
 
       {/* Meta */}

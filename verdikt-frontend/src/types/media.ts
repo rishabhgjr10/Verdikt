@@ -15,6 +15,10 @@ export interface MediaItem {
   creatorsJson: string[] | null;
   genresJson: string[] | null;
   platformsJson: string[] | null;
+  /** TMDB audience score (0-10) and vote count; turn them into a verdict with audienceVerdict() */
+  voteAverage?: number | null;
+  voteCount?: number | null;
+  releaseDate?: string | null;
 }
 
 export interface Review {

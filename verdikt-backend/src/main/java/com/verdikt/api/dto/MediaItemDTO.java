@@ -27,6 +27,8 @@ public class MediaItemDTO {
     private List<Map<String, Object>> topRatings;
     /** TMDB vote_count / popularity, set only on live TMDB search results; used for client-side search ranking. */
     private Integer voteCount;
+    /** TMDB vote_average (0-10); the frontend turns it into a verdict with one shared rule */
+    private Double voteAverage;
     private Double popularity;
 
     public MediaItemDTO() {
@@ -169,6 +171,14 @@ public class MediaItemDTO {
         this.voteCount = voteCount;
     }
 
+    public Double getVoteAverage() {
+        return voteAverage;
+    }
+
+    public void setVoteAverage(Double voteAverage) {
+        this.voteAverage = voteAverage;
+    }
+
     public Double getPopularity() {
         return popularity;
     }
@@ -196,6 +206,8 @@ public class MediaItemDTO {
                 .platformsJson(entity.getPlatformsJson())
                 .releaseDate(entity.getReleaseDate())
                 .build();
+        dto.setVoteAverage(entity.getVoteAverage());
+        dto.setVoteCount(entity.getVoteCount());
         if (entity.getRatingsJson() != null && !entity.getRatingsJson().isEmpty()) {
             dto.setTopRatings(entity.getRatingsJson().stream().limit(2).toList());
         }

@@ -7,7 +7,7 @@ import { MediaItem } from "@/types/media";
 import { PosterImage } from "@/components/PosterImage";
 
 interface LeaderboardProps {
-  items: (MediaItem & { voteAverage?: number })[];
+  items: MediaItem[];
 }
 
 export function Leaderboard({ items }: LeaderboardProps) {

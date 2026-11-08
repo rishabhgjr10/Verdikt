@@ -17,7 +17,16 @@ import {
   deduplicateMedia,
 } from "@/lib/tmdb";
 import { rankAndFilterSearchResults } from "@/lib/catalog-navigation";
-import { Search, AlertCircle, Loader2, ChevronDown, Sparkles } from "lucide-react";
+import { CURATED_POPULAR_BOOKS, CURATED_WORTH_READING } from "@/lib/discovery";
+import { Search, AlertCircle, Loader2, ChevronDown, Sparkles, Gamepad2 } from "lucide-react";
+
+/**
+ * Browsing Books shows the editors' list: a blank Google Books "popular" query surfaces magazines and reference works
+ * (Popular Mechanics, subject-heading catalogues) that read as top picks. Searching still covers every book.
+ */
+const CURATED_BOOKS = [...CURATED_POPULAR_BOOKS, ...CURATED_WORTH_READING].filter(
+  (b, i, all) => all.findIndex((x) => x.externalId === b.externalId) === i
+);
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -77,11 +86,9 @@ function SearchContent() {
         }
         return deduplicateFranchises(mapped);
       } else if (cat === "GAME") {
-        const games = await mediaApi.search("popular", "GAME", 1).catch(() => [] as MediaItem[]);
-        return deduplicateMedia(games);
+        return []; // Games aren't launched yet; the page shows a coming-soon state
       } else if (cat === "BOOK") {
-        const books = await mediaApi.search("popular", "BOOK", 1).catch(() => [] as MediaItem[]);
-        return deduplicateMedia(books);
+        return CURATED_BOOKS;
       }
     }
 
@@ -101,7 +108,8 @@ function SearchContent() {
       try {
         const initialResults = await fetchItems(query.trim() ? "ALL" : browseCategory, 1);
         setItems(initialResults);
-        if (initialResults.length === 0) {
+        // Books and Games browse fixed lists; "load more" would page into unfiltered provider results
+        if (initialResults.length === 0 || (!query.trim() && (browseCategory === "BOOK" || browseCategory === "GAME"))) {
           setHasMore(false);
         }
       } catch (err: any) {
@@ -266,6 +274,14 @@ function SearchContent() {
                 <div className="h-3 w-1/2 bg-zinc-800/60 animate-pulse rounded" />
               </div>
             ))}
+          </div>
+        ) : !query && browseCategory === "GAME" ? (
+          <div className="text-center py-20 bg-zinc-900/30 rounded-2xl border border-white/[0.06] max-w-lg mx-auto px-6">
+            <Gamepad2 className="w-12 h-12 text-purple-400/70 mx-auto mb-3" aria-hidden="true" />
+            <h3 className="text-base font-bold text-white">Games are coming soon</h3>
+            <p className="mt-1 text-sm text-zinc-400">
+              Verdicts for video games are on the way. Until then, try Movies, Series, Anime or Books.
+            </p>
           </div>
         ) : displayedItems.length > 0 ? (
           <>

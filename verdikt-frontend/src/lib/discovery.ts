@@ -20,7 +20,7 @@ import {
 } from "@/lib/tmdb";
 
 export type DiscoveryItem = MediaItem & {
-  voteAverage?: number;
+  voteAverage?: number | null;
   popularity?: number;
   /** Overrides the card's link, for fallback books that have no Google volume id */
   href?: string;

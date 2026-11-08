@@ -5,6 +5,7 @@ import com.verdikt.api.service.CollectionService.CollectionDTO;
 import com.verdikt.api.service.CollectionService.CollectionDetailDTO;
 import com.verdikt.api.service.CollectionService.CreateCollectionRequest;
 import com.verdikt.api.service.CollectionService.UpdateCollectionRequest;
+import com.verdikt.api.service.MediaItemService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,9 +29,11 @@ import java.util.UUID;
 public class CollectionController {
 
     private final CollectionService collectionService;
+    private final MediaItemService mediaItemService;
 
-    public CollectionController(CollectionService collectionService) {
+    public CollectionController(CollectionService collectionService, MediaItemService mediaItemService) {
         this.collectionService = collectionService;
+        this.mediaItemService = mediaItemService;
     }
 
     @GetMapping
@@ -40,7 +43,9 @@ public class CollectionController {
 
     @GetMapping("/{id}")
     public CollectionDetailDTO get(@PathVariable UUID id, @AuthenticationPrincipal UserDetails user) {
-        return collectionService.get(user.getUsername(), id);
+        CollectionDetailDTO detail = collectionService.get(user.getUsername(), id);
+        mediaItemService.backfillScoresAsync(detail.items());
+        return detail;
     }
 
     @PostMapping
