@@ -95,6 +95,14 @@ class UserMediaSecurityWebTest {
     }
 
     @Test
+    void uptimePingIsPublic() throws Exception {
+        mvc.perform(get("/health")).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ok"));
+        // A stale or junk token must not turn the ping into a 401
+        mvc.perform(get("/health").header("Authorization", "Bearer not-a-real-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void systemCollectionEditsReturn403() throws Exception {
         mvc.perform(put("/api/media/{id}/watched", mediaId).with(user("alice"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"value\":true}"))

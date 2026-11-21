@@ -62,6 +62,7 @@ public class SecurityConfig {
 
                         // System / Error / Health endpoints
                         .requestMatchers("/error", "/favicon.ico", "/", "/actuator/**", "/api/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/health").permitAll()
 
                         // Any other endpoint requires JWT authentication
                         .anyRequest().authenticated()
