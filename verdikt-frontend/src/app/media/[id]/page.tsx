@@ -46,6 +46,7 @@ import {
   TmdbCollection,
   TmdbHeroDetails,
   TmdbItem,
+  TmdbVideo,
   TmdbWatchProvider,
   WatchOffer,
   audienceVerdict,
@@ -71,6 +72,10 @@ import {
   Share2,
   CalendarClock,
   Check,
+  Star,
+  Pause,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 const SLIDE_SECONDS = 8;
@@ -404,7 +409,16 @@ export default function MediaDetailPage({
   }, []);
   const [verdictFilter, setVerdictFilter] = useState<Verdict | "ALL">("ALL");
 
-  const [trailerModalOpen, setTrailerModalOpen] = useState(false);
+  /** Clip opened from Trailers & Clips */
+  const [playingClip, setPlayingClip] = useState<TmdbVideo | null>(null);
+  // Hero background trailer, keyed by YouTube id so a new title starts fresh: shown once loaded, muted until unmuted
+  const [shownTrailer, setShownTrailer] = useState<string | null>(null);
+  const [pausedTrailer, setPausedTrailer] = useState<string | null>(null);
+  const [unmutedTrailer, setUnmutedTrailer] = useState<string | null>(null);
+  const [failedLogo, setFailedLogo] = useState<string | null>(null);
+  const [heroInView, setHeroInView] = useState(true);
+  const trailerFrame = useRef<HTMLIFrameElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ReviewWithRelations | null>(null);
@@ -581,6 +595,14 @@ export default function MediaDetailPage({
     return () => cancelAnimationFrame(frame);
   }, [isLoading]);
 
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([entry]) => setHeroInView(entry.isIntersecting));
+    io.observe(el);
+    return () => io.disconnect();
+  }, [isLoading]);
+
   if (isLoading) {
     return <MediaDetailSkeleton />;
   }
@@ -621,7 +643,24 @@ export default function MediaDetailPage({
   const releaseDate = releaseDateIso
     ? new Date(releaseDateIso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
     : null;
-  const metaParts = [releaseDate, heroDetails?.runtimeMinutes ? formatRuntime(heroDetails.runtimeMinutes) : null].filter(Boolean);
+  const releaseYear = releaseDateIso ? releaseDateIso.slice(0, 4) : mediaItem.releaseYear ? String(mediaItem.releaseYear) : null;
+
+  // Background trailer: skipped for reduced motion and data-saver users, who keep the backdrop slideshow
+  const quietMode =
+    typeof window !== "undefined" &&
+    (window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !!(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData);
+  const bgTrailer = quietMode ? null : heroDetails?.videos.find((v) => v.type === "Trailer" || v.type === "Teaser") ?? null;
+  const trailerShown = !!bgTrailer && shownTrailer === bgTrailer.key;
+  const trailerPaused = !!bgTrailer && pausedTrailer === bgTrailer.key;
+  const trailerMuted = !bgTrailer || unmutedTrailer !== bgTrailer.key;
+  // YouTube's iframe API takes commands by postMessage (enablejsapi=1), so no player script is loaded
+  const trailerCommand = (func: "playVideo" | "pauseVideo" | "mute" | "unMute") =>
+    trailerFrame.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: "command", func, args: [] }),
+      "https://www.youtube-nocookie.com"
+    );
+  const logoUrl = heroDetails?.logo && heroDetails.logo !== failedLogo ? heroDetails.logo : null;
 
   // Optimistic: the heart flips at once and flips back if the server refuses
   const toggleFavorite = () =>
@@ -746,7 +785,7 @@ export default function MediaDetailPage({
   return (
     <div className="relative min-h-screen -mt-28 flex flex-col text-zinc-100">
       {/* Cinematic backdrop: fixed to the viewport, clipped to this page so it never covers the footer */}
-      {slides.length > 0 && (
+      {(slides.length > 0 || bgTrailer) && (
         <div className="absolute inset-0 z-0 pointer-events-none [clip-path:inset(0)]" aria-hidden="true">
           <style>{`${slideshowCss(slides.length)}@keyframes hero-pan{from{transform:scale(1.12) translateX(-3%)}to{transform:scale(1.12) translateX(3%)}}`}</style>
           <div className="fixed inset-0 z-0 overflow-hidden">
@@ -774,8 +813,23 @@ export default function MediaDetailPage({
                 />
               </div>
             ))}
-            {/* Even vignette keeps the whole backdrop visible; the bottom-up fade carries text contrast */}
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] z-10" />
+            {/* Trailer fades in over the slideshow once loaded; sized to cover like object-cover, overscanned to hide YouTube's chrome */}
+            {bgTrailer && (
+              <iframe
+                key={bgTrailer.key}
+                ref={trailerFrame}
+                src={`https://www.youtube-nocookie.com/embed/${bgTrailer.key}?autoplay=1&mute=1&controls=0&loop=1&playlist=${bgTrailer.key}&playsinline=1&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&enablejsapi=1`}
+                title={`${mediaItem.title} trailer`}
+                tabIndex={-1}
+                allow="autoplay; encrypted-media"
+                onLoad={() => setTimeout(() => setShownTrailer(bgTrailer.key), 1200)}
+                className={`absolute top-1/2 left-1/2 w-[max(100vw,177.78vh)] h-[max(56.25vw,100vh)] -translate-x-1/2 -translate-y-1/2 scale-[1.15] border-0 transition-opacity duration-1000 ${
+                  trailerShown ? "opacity-100" : "opacity-0"
+                }`}
+              />
+            )}
+            {/* Even vignette keeps the whole backdrop visible; the bottom-up fade carries text contrast (no blur over a playing trailer) */}
+            <div className={`absolute inset-0 z-10 ${trailerShown ? "bg-black/40" : "bg-black/50 backdrop-blur-[2px]"}`} />
             <div className="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#09090b]/60 to-transparent z-10" />
           </div>
         </div>
@@ -784,7 +838,7 @@ export default function MediaDetailPage({
       {/* Detail Page Content (relative z-10 with existing pt-28 clearance) */}
       <div className="relative z-10 flex-1 flex flex-col pt-28">
         {/* ── Hero: poster | title, facts, overview | library actions + watch online ── */}
-        <div className="w-full max-w-[1500px] mx-auto px-6 lg:px-12 pt-12 pb-2 relative z-20 flex flex-col lg:flex-row gap-8 justify-between items-start">
+        <div ref={heroRef} className="w-full max-w-[1500px] mx-auto px-6 lg:px-12 pt-12 pb-2 relative z-20 flex flex-col lg:flex-row gap-8 justify-between items-start">
           {/* Left: poster only, always 2:3 (never stretched or cropped). 270px on phones; on desktop its width is
               set from the details column's height (240–340px) so both end level */}
           <div className="self-center lg:self-start">
@@ -832,22 +886,51 @@ export default function MediaDetailPage({
               title={mediaItem.title}
               className="text-4xl lg:text-5xl font-extrabold text-white tracking-tight drop-shadow-lg mt-1 mb-4 leading-[1.05] line-clamp-2 break-words"
             >
-              {mediaItem.title}
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={logoUrl}
+                  alt={mediaItem.title}
+                  onError={() => setFailedLogo(logoUrl)}
+                  className="block max-h-28 lg:max-h-36 w-auto max-w-[min(100%,28rem)] object-contain object-left drop-shadow-[0_4px_24px_rgba(0,0,0,0.6)]"
+                />
+              ) : (
+                mediaItem.title
+              )}
             </h1>
 
-            {(heroDetails?.ageRating || metaParts.length > 0) && (
-              <p className="flex flex-wrap items-center text-sm text-zinc-300 mb-4">
-                {heroDetails?.ageRating && (
+            {(() => {
+              const facts = [
+                heroDetails?.voteAverage != null && (
+                  <span key="rating" className="inline-flex items-center gap-1 font-semibold text-white" title={`Audience rating from ${heroDetails.voteCount ?? 0} votes`}>
+                    <Star className="w-4 h-4 fill-amber-400 text-amber-400" aria-hidden="true" />
+                    {heroDetails.voteAverage.toFixed(1)}
+                    <span className="sr-only">out of 10</span>
+                  </span>
+                ),
+                releaseYear && <span key="year">{releaseYear}</span>,
+                heroDetails?.runtimeMinutes ? <span key="runtime">{formatRuntime(heroDetails.runtimeMinutes)}</span> : null,
+                heroDetails?.ageRating && (
                   <span
-                    className="inline-flex items-center justify-center px-1.5 py-0.5 border border-white/30 text-white/70 text-[10px] rounded-sm font-medium mr-2"
+                    key="age"
+                    className="inline-flex items-center justify-center px-1.5 py-0.5 border border-white/30 text-white/70 text-[10px] rounded-sm font-medium"
                     title="Age rating"
                   >
                     {heroDetails.ageRating}
                   </span>
-                )}
-                {metaParts.join(" • ")}
-              </p>
-            )}
+                ),
+              ].filter(Boolean);
+              return facts.length > 0 ? (
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-300 mb-4">
+                  {facts.map((fact, i) => (
+                    <React.Fragment key={i}>
+                      {i > 0 && <span className="h-3.5 w-px bg-white/20" aria-hidden="true" />}
+                      {fact}
+                    </React.Fragment>
+                  ))}
+                </p>
+              ) : null;
+            })()}
 
             {/* External ratings (client-side, never blocks the page; empty slot collapses) */}
             <div className="mb-6 empty:hidden">
@@ -1079,6 +1162,53 @@ export default function MediaDetailPage({
             </section>
           )}
 
+          {/* ── Trailers & Clips (TMDB's YouTube videos; plays in the trailer modal) ── */}
+          {heroDetails && heroDetails.videos.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+                <div className="flex items-center gap-2">
+                  <Play className="w-5 h-5 text-violet-400 fill-current" aria-hidden="true" />
+                  <h2 className="text-lg font-bold text-white tracking-tight">Trailers &amp; Clips</h2>
+                </div>
+                <span className="text-xs text-zinc-500">{heroDetails.videos.length} videos</span>
+              </div>
+
+              <ShelfRail step={560} label="trailers and clips" className="gap-4 py-2 snap-x snap-mandatory">
+                {heroDetails.videos.map((v) => (
+                  <li key={v.key} className="w-[240px] sm:w-[272px] flex-shrink-0 snap-start">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        trailerCommand("pauseVideo");
+                        if (bgTrailer) setPausedTrailer(bgTrailer.key);
+                        setPlayingClip(v);
+                      }}
+                      className="block w-full text-left group cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                    >
+                      <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-800 border border-white/10 group-hover:border-white/20 transition-transform duration-300 group-hover:-translate-y-1 motion-reduce:group-hover:translate-y-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`https://i.ytimg.com/vi/${v.key}/hqdefault.jpg`} alt="" loading="lazy" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/25 group-hover:bg-black/10 transition-colors" />
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          <span className="w-12 h-12 rounded-full bg-black/55 backdrop-blur-md border border-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <Play className="w-5 h-5 text-white fill-current ml-0.5" aria-hidden="true" />
+                          </span>
+                        </span>
+                        {/* shortcut: TMDB gives no clip length (that needs a YouTube Data API key), so the corner shows the video type */}
+                        <span className="absolute bottom-2 right-2 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-white/10 text-[10px] font-semibold text-white">
+                          {v.type}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold text-white leading-snug line-clamp-2 group-hover:text-violet-400 transition-colors" title={v.name}>
+                        {v.name}
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ShelfRail>
+            </section>
+          )}
+
           {/* ── Shelf 1: Complete Franchise & Sequels ── */}
           {collection && collection.parts && collection.parts.length > 0 && (
             <section className="space-y-4">
@@ -1202,6 +1332,12 @@ export default function MediaDetailPage({
                           ) : (
                             <p className="text-xs text-white/50">
                               {[partYear, runtime ? formatRuntime(runtime) : null].filter(Boolean).join(" • ")}
+                              {(part.vote_count ?? 0) > 0 && (
+                                <>
+                                  {" • "}
+                                  <span className="text-amber-300" aria-hidden="true">★</span> {part.vote_average.toFixed(1)}
+                                </>
+                              )}
                             </p>
                           )}
                           {watched && <span className="sr-only">Watched</span>}
@@ -1298,7 +1434,15 @@ export default function MediaDetailPage({
                         <p className="text-sm font-semibold text-white truncate leading-snug group-hover:text-violet-400 transition-colors">
                           {recTitle}
                         </p>
-                        <p className="text-xs text-zinc-500">{recYear}</p>
+                        <p className="text-xs text-zinc-500">
+                          {recYear}
+                          {(rec.vote_count ?? 0) > 0 && (
+                            <>
+                              {" • "}
+                              <span className="text-amber-300" aria-hidden="true">★</span> {rec.vote_average.toFixed(1)}
+                            </>
+                          )}
+                        </p>
                       </div>
                     </Link>
                     </li>
@@ -1466,11 +1610,41 @@ export default function MediaDetailPage({
 
       {/* Modals */}
       <TrailerModal
-        isOpen={trailerModalOpen}
-        onClose={() => setTrailerModalOpen(false)}
-        trailerUrl={mediaItem.trailerUrl}
+        isOpen={!!playingClip}
+        onClose={() => setPlayingClip(null)}
+        trailerUrl={playingClip ? `https://www.youtube.com/watch?v=${playingClip.key}` : null}
         title={mediaItem.title}
+        heading={playingClip?.name}
       />
+
+      {trailerShown && heroInView && (
+        <div className="fixed bottom-6 right-6 z-30 flex items-center gap-2">
+          <button
+            type="button"
+            className={ICON_PILL}
+            aria-label={trailerPaused ? "Play background trailer" : "Pause background trailer"}
+            title={trailerPaused ? "Play" : "Pause"}
+            onClick={() => {
+              trailerCommand(trailerPaused ? "playVideo" : "pauseVideo");
+              setPausedTrailer(trailerPaused ? null : bgTrailer!.key);
+            }}
+          >
+            {trailerPaused ? <Play className="w-5 h-5 fill-current" aria-hidden="true" /> : <Pause className="w-5 h-5 fill-current" aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            className={ICON_PILL}
+            aria-label={trailerMuted ? "Unmute background trailer" : "Mute background trailer"}
+            title={trailerMuted ? "Unmute" : "Mute"}
+            onClick={() => {
+              trailerCommand(trailerMuted ? "unMute" : "mute");
+              setUnmutedTrailer(trailerMuted ? bgTrailer!.key : null);
+            }}
+          >
+            {trailerMuted ? <VolumeX className="w-5 h-5" aria-hidden="true" /> : <Volume2 className="w-5 h-5" aria-hidden="true" />}
+          </button>
+        </div>
+      )}
 
       <ReviewModal
         isOpen={reviewModalOpen}

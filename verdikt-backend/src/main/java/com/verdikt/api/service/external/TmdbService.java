@@ -56,6 +56,46 @@ public class TmdbService {
                 .build();
     }
 
+    // ──────────────────────────── Discover by streaming provider ────────────────────────────
+
+    /**
+     * Titles TMDB (JustWatch data) lists as streaming on the given providers in the region, most popular first.
+     * Only flatrate/free/ads offers count, so rent-or-buy-only titles never appear on a "watch it on X" shelf.
+     */
+    public List<MediaItemDTO> discoverByProviders(boolean tv, String providerIds, String region, int page) {
+        try {
+            JsonNode response = tmdbClient.get()
+                    .uri(uriBuilder -> uriBuilder.path(tv ? "/discover/tv" : "/discover/movie")
+                            .queryParam("api_key", apiKey)
+                            .queryParam("watch_region", region)
+                            .queryParam("with_watch_providers", providerIds)
+                            .queryParam("with_watch_monetization_types", "flatrate|free|ads")
+                            .queryParam("sort_by", "popularity.desc")
+                            .queryParam("include_adult", false)
+                            .queryParam("page", Math.max(1, page))
+                            .build())
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(1)))
+                    .onErrorResume(e -> {
+                        logNetworkWarning("discoverByProviders", "providers=" + providerIds + ", tv=" + tv, e);
+                        return Mono.empty();
+                    })
+                    .block();
+            if (response == null || !response.has("results")) {
+                return Collections.emptyList();
+            }
+            List<MediaItemDTO> list = new ArrayList<>();
+            for (JsonNode node : response.get("results")) {
+                list.add(tv ? mapTvNodeToDTO(node, MediaType.SERIES) : mapMovieNodeToDTO(node));
+            }
+            return list;
+        } catch (Exception e) {
+            logNetworkWarning("discoverByProviders", "providers=" + providerIds + ", tv=" + tv, e);
+            return Collections.emptyList();
+        }
+    }
+
     // ──────────────────────────── Search ────────────────────────────
 
     public List<MediaItemDTO> searchMovies(String query) {

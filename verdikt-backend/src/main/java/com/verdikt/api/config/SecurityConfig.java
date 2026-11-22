@@ -60,6 +60,9 @@ public class SecurityConfig {
                         // Uploaded profile photos, shown next to public reviews
                         .requestMatchers(HttpMethod.GET, "/api/avatars/*").permitAll()
 
+                        // Weekly homepage selections
+                        .requestMatchers(HttpMethod.GET, "/api/discovery/**").permitAll()
+
                         // System / Error / Health endpoints
                         .requestMatchers("/error", "/favicon.ico", "/", "/actuator/**", "/api/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/health").permitAll()

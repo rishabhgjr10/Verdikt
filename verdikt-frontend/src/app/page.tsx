@@ -21,6 +21,7 @@ import {
   fetchTmdbTrailerUrl,
 } from "@/lib/tmdb";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Film, Tv, Sparkles, Gamepad2, BookOpen, Play, Shuffle } from "lucide-react";
+import { nextShuffle } from "@/lib/shuffle";
 import { TrailerModal } from "@/components/TrailerModal";
 import {
   PLATFORMS,
@@ -509,27 +510,25 @@ function LandscapeSkeleton() {
 }
 
 // ── Poster Shelf (Editor's Pick, Books, Platforms) ───────────────────────────
+const feedKey = (item: MediaItem) => `${item.mediaType}-${item.externalId || item.id}`;
+
 /**
- * Shows `size` items from `pool`; shuffle() swaps in a random set, preferring titles not on screen.
- * The shuffled set is tied to the pool it came from, so a new pool (e.g. another platform) starts unshuffled.
+ * Shows `size` items from `pool` (the shared weekly picks come first); shuffle() swaps in titles not yet shown in
+ * this cycle (see nextShuffle). It only changes this shelf on this screen. The shuffled set is tied to the pool it
+ * came from, so another platform starts from its own picks, and switching back resumes where it was.
  */
-function useShuffle<T>(pool: T[], size: number) {
-  const [shuffled, setShuffled] = useState<{ from: T[]; items: T[] } | null>(null);
-  const visible = (shuffled?.from === pool ? shuffled.items : pool).slice(0, size);
+function useShuffle<T extends MediaItem>(pool: T[], size: number) {
+  const [shuffled, setShuffled] = useState<{ from: T[]; items: T[]; seen: Set<string> } | null>(null);
+  const [byPool] = useState(() => new WeakMap<T[], { items: T[]; seen: Set<string> }>());
+  const current = shuffled?.from === pool ? shuffled : byPool.get(pool) ?? null;
+  const visible = (current ? current.items : pool).slice(0, size);
   const shuffle = () => {
-    const random = (list: T[]) => {
-      const a = [...list];
-      for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-      }
-      return a;
-    };
-    const unseen = random(pool.filter((x) => !visible.includes(x)));
-    setShuffled({ from: pool, items: [...unseen, ...random(visible)].slice(0, size) });
+    const next = nextShuffle(pool, feedKey, visible, current?.seen ?? new Set<string>(), size);
+    byPool.set(pool, next);
+    setShuffled({ from: pool, ...next });
   };
-  // With no spare titles (e.g. the 12 fallback books), Shuffle just reorders what is on screen
-  return { visible, shuffle, canShuffle: pool.length > 1 };
+  // Needs at least one title beyond what fits on screen to show something different
+  return { visible, shuffle, canShuffle: new Set(pool.map(feedKey)).size > size };
 }
 
 function ShuffleButton({ onClick, label }: { onClick: () => void; label: string }) {
@@ -717,8 +716,7 @@ function PlatformPicker({
 }
 
 // ── Streaming platform shelf: one section, platform picked from a dropdown ───
-// Two rows of six on screen; the rest of the pool feeds Shuffle
-const PLATFORM_POOL = 24;
+// Two rows of six on screen; the rest of the platform's weekly pool feeds Shuffle
 function PlatformShelf() {
   const [platformId, setPlatformId] = useState(PLATFORMS[0].id);
   // Results cached per platform so switching back is instant
@@ -729,7 +727,7 @@ function PlatformShelf() {
   useEffect(() => {
     if (cache[platformId]) return;
     let cancelled = false;
-    fetchPlatformShelf(platformId, PLATFORM_POOL)
+    fetchPlatformShelf(platformId)
       .catch(() => [] as FeedItem[])
       .then((result) => {
         if (!cancelled) setCache((c) => ({ ...c, [platformId]: result }));

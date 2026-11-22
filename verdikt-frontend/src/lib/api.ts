@@ -75,6 +75,36 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
   return typeof message === "string" && message.trim() ? message : fallback;
 }
 
+/** One title in a weekly homepage selection (backend WeeklyPicksService.PickItem) */
+export interface WeeklyPickItem {
+  externalId: string;
+  mediaType: MediaType;
+  title: string;
+  releaseYear: number | null;
+  releaseDate: string | null;
+  coverImage: string | null;
+  voteAverage: number | null;
+  voteCount: number | null;
+  href: string | null;
+}
+
+export interface WeeklyPicks {
+  section: string;
+  weekStart: string;
+  refreshedAt: string | null;
+  nextRefreshAt: string;
+  source: "AUTO" | "MANUAL";
+  /** This week's titles, the same for everyone */
+  picks: WeeklyPickItem[];
+  /** Other eligible titles; Shuffle draws from these without changing the shared picks */
+  pool: WeeklyPickItem[];
+}
+
+/** Weekly homepage selections: "editors", "reading", "platform-<providerId>" (week starts Monday 00:00 IST) */
+export const discoveryApi = {
+  weekly: async (section: string): Promise<WeeklyPicks> => (await api.get<WeeklyPicks>(`/discovery/weekly/${section}`)).data,
+};
+
 /** The signed-in user's own account */
 export const profileApi = {
   me: async (): Promise<User> => (await api.get<User>("/me/profile")).data,

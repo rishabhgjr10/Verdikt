@@ -1,21 +1,18 @@
 /**
- * Homepage discovery: the balanced "Talk Of The Town" mix, curated weekly shelves
- * and per-platform shelves. Built on the existing TMDB helpers and the backend's
- * Google Books / IGDB search; every source degrades to an empty list on failure.
+ * Homepage discovery: the balanced "Talk Of The Town" mix, plus the weekly shelves (Editor's Pick, Worth Your Time
+ * To Read, the platform shelves), which the backend selects once per week (Monday 00:00 IST) and serves to everyone.
+ * Every source degrades to an empty list on failure.
  */
 
-import { mediaApi } from "@/lib/api";
+import { discoveryApi, mediaApi, WeeklyPickItem } from "@/lib/api";
 import { MediaItem, MediaType } from "@/types/media";
 import {
   TmdbItem,
   fetchIndianTitles,
-  fetchJioHotstarTitles,
-  fetchProviderTitles,
   fetchTrendingAllWeek,
   fetchTrendingAnime,
   fetchTrendingMovies,
   fetchTrendingTv,
-  searchTmdbTitle,
   tmdbToMediaItem,
 } from "@/lib/tmdb";
 
@@ -27,9 +24,6 @@ export type DiscoveryItem = MediaItem & {
 };
 
 const FEED_SIZE = 10;
-/** Editor's Pick and Worth Your Time To Read now run full width, six per row */
-const EDITORS_WEEKLY = 6;
-const BOOKS_SHOWN = 6;
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
@@ -81,10 +75,32 @@ function weeklySlice<T>(pool: T[], count: number, week = weekIndex()): T[] {
   return Array.from({ length: Math.min(count, pool.length) }, (_, i) => pool[(start + i) % pool.length]);
 }
 
-/** The whole pool, rotated so this week's slice of `count` comes first (the rest feeds Shuffle). */
-function weeklyRotation<T>(pool: T[], count: number): T[] {
-  const start = (weekIndex() * count) % pool.length;
-  return [...pool.slice(start), ...pool.slice(0, start)];
+/** A weekly pick as a homepage card item */
+function fromWeeklyPick(p: WeeklyPickItem): DiscoveryItem {
+  return {
+    id: `${p.mediaType.toLowerCase()}-${p.externalId}`,
+    externalId: p.externalId,
+    mediaType: p.mediaType,
+    title: p.title,
+    releaseYear: p.releaseYear,
+    releaseDate: p.releaseDate,
+    coverImage: p.coverImage,
+    backdropImage: null,
+    description: null,
+    trailerUrl: null,
+    creatorsJson: null,
+    genresJson: null,
+    platformsJson: null,
+    voteAverage: p.voteAverage,
+    voteCount: p.voteCount,
+    ...(p.href ? { href: p.href } : {}),
+  };
+}
+
+/** This week's picks first, then the section's other eligible titles (which only Shuffle shows) */
+async function weeklyShelf(section: string): Promise<DiscoveryItem[]> {
+  const week = await discoveryApi.weekly(section);
+  return [...week.picks, ...week.pool].map(fromWeeklyPick);
 }
 
 // ── Books via the existing Google Books integration ──────────────────────────
@@ -190,42 +206,16 @@ export const CURATED_WORTH_READING: DiscoveryItem[] = [
   fallbackIsbnBook("9781400096206", "The Palace of Illusions", "Chitra Banerjee Divakaruni", 2008, "Mythological Fiction"),
 ];
 
-/**
- * All picks, this week's six first; the homepage shows six and each Shuffle brings in six others.
- * Pre-cached with direct covers for instant loading without blocking mobile networks.
- */
+/** This week's six books first; the rest of the reading list feeds Shuffle. */
 export async function fetchWorthReadingBooks(): Promise<DiscoveryItem[]> {
-  return weeklyRotation(CURATED_WORTH_READING, BOOKS_SHOWN);
+  return weeklyShelf("reading");
 }
 
 // ── Editor's Pick Of The Week ────────────────────────────────────────────────
 
-interface TitleSeed {
-  title: string;
-  kind: "movie" | "tv";
-  year: number;
-  type: MediaType;
-}
-
-/** Cult classics and masterpieces, 1950s–2020s; Indian and global/anime alternate. */
-const EDITORS_PICKS: TitleSeed[] = [
-  { title: "Tumbbad", kind: "movie", year: 2018, type: "MOVIE" },
-  { title: "12 Angry Men", kind: "movie", year: 1957, type: "MOVIE" },
-  { title: "Gangs of Wasseypur", kind: "movie", year: 2012, type: "MOVIE" },
-  { title: "Great Teacher Onizuka", kind: "tv", year: 1999, type: "ANIME" },
-  { title: "Satya", kind: "movie", year: 1998, type: "MOVIE" },
-  { title: "Witness for the Prosecution", kind: "movie", year: 1957, type: "MOVIE" },
-  { title: "Bhoothakaalam", kind: "movie", year: 2022, type: "MOVIE" },
-  { title: "The Good Place", kind: "tv", year: 2016, type: "SERIES" },
-  { title: "The Substance", kind: "movie", year: 2024, type: "MOVIE" },
-  { title: "Pather Panchali", kind: "movie", year: 1955, type: "MOVIE" },
-];
-
-/** This week's six picks; the set changes each week. */
+/** This week's six picks from the editors' list; the same for everyone until Monday 00:00 IST. */
 export async function fetchEditorsPicks(): Promise<DiscoveryItem[]> {
-  const seeds = weeklySlice(EDITORS_PICKS, EDITORS_WEEKLY);
-  const found = await Promise.all(seeds.map((s) => searchTmdbTitle(s.kind, s.title, s.year)));
-  return found.flatMap((item, i) => (item ? toItems([item], seeds[i].type) : []));
+  return (await discoveryApi.weekly("editors")).picks.map(fromWeeklyPick);
 }
 
 // ── Talk Of The Town ─────────────────────────────────────────────────────────
@@ -284,29 +274,10 @@ export const PLATFORMS: Platform[] = [
   { id: 350, name: "Apple TV+", heading: "Worth Watching on Apple TV" },
 ];
 
-/** Popular movies and series on one platform in India, interleaved. */
-export async function fetchPlatformShelf(providerId: number, limit = 10): Promise<DiscoveryItem[]> {
-  if (providerId === JIOHOTSTAR_ID) return fetchJioHotstarShelf(limit);
-  const [movies, tv] = await Promise.all([
-    fetchProviderTitles(providerId, "movie"),
-    fetchProviderTitles(providerId, "tv"),
-  ]);
-  return interleave([toItems(movies, "MOVIE"), toItems(tv, "SERIES")], limit);
-}
-
-const JIOHOTSTAR_ID = 122;
-
-/** JioHotstar: merged Hotstar + JioCinema providers and flagship networks, deduped, popularity-ranked. */
-async function fetchJioHotstarShelf(limit: number): Promise<DiscoveryItem[]> {
-  const { movies, tv } = await fetchJioHotstarTitles();
-  const seen = new Set<number>();
-  const rank = (items: TmdbItem[]) =>
-    items
-      .filter((i) => {
-        if (!i.poster_path || seen.has(i.id)) return false;
-        seen.add(i.id);
-        return true;
-      })
-      .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
-  return interleave([toItems(rank(tv), "SERIES"), toItems(rank(movies), "MOVIE")], limit);
+/**
+ * This week's titles streaming on one platform in India (TMDB watch-provider data), the same for everyone until
+ * Monday 00:00 IST; the platform's other eligible titles follow and feed Shuffle.
+ */
+export async function fetchPlatformShelf(providerId: number): Promise<DiscoveryItem[]> {
+  return weeklyShelf(`platform-${providerId}`);
 }

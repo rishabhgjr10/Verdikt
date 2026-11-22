@@ -8,6 +8,8 @@ interface TrailerModalProps {
   onClose: () => void;
   trailerUrl: string | null;
   title: string;
+  /** Shown after the title; defaults to "Official Trailer" */
+  heading?: string;
 }
 
 export const TrailerModal: React.FC<TrailerModalProps> = ({
@@ -15,6 +17,7 @@ export const TrailerModal: React.FC<TrailerModalProps> = ({
   onClose,
   trailerUrl,
   title,
+  heading = "Official Trailer",
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -54,7 +57,7 @@ export const TrailerModal: React.FC<TrailerModalProps> = ({
         <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900/90">
           <div className="flex items-center gap-2">
             <Film className="w-5 h-5 text-violet-400" />
-            <h3 className="font-bold text-slate-100 line-clamp-1">{title} — Official Trailer</h3>
+            <h3 className="font-bold text-slate-100 line-clamp-1">{title} — {heading}</h3>
           </div>
           <button
             onClick={onClose}

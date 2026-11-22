@@ -384,8 +384,21 @@ export interface TmdbHeroDetails {
   genres: string[];
   crew: TmdbCrewCredit[];
   backdrops: string[];
+  /** Official title-treatment logo (transparent PNG/SVG), English or language-free; null when TMDB has none */
+  logo: string | null;
+  /** YouTube trailers, teasers and clips, trailers first */
+  videos: TmdbVideo[];
   belongs_to_collection: TmdbItem["belongs_to_collection"];
 }
+
+export interface TmdbVideo {
+  /** YouTube video id */
+  key: string;
+  name: string;
+  type: string;
+}
+
+const VIDEO_ORDER = ["Trailer", "Teaser", "Clip", "Featurette", "Behind the Scenes"];
 
 const CREW_JOBS = ["Director", "Screenplay", "Writer", "Story"];
 
@@ -402,7 +415,7 @@ export async function fetchTmdbHeroDetails(
     // Text-free (null) backdrops first so the slideshow has no burned-in titles
     const res = await fetchWithTimeout(
       `${TMDB_BASE_URL}/${isTv ? "tv" : "movie"}/${tmdbId}?api_key=${TMDB_API_KEY}&language=en-US` +
-        `&append_to_response=credits,release_dates,content_ratings,images&include_image_language=null,en`,
+        `&append_to_response=credits,release_dates,content_ratings,images,videos&include_image_language=null,en`,
       {},
       6000
     );
@@ -437,6 +450,18 @@ export async function fetchTmdbHeroDetails(
       .slice(0, 3)
       .map((b) => `${TMDB_IMG}/t/p/w1280${b.file_path}`);
 
+    const logoPath = ((d.images?.logos || []) as { file_path: string; iso_639_1: string | null }[])
+      .sort((a, b) => Number(a.iso_639_1 !== "en") - Number(b.iso_639_1 !== "en"))[0]?.file_path;
+
+    const videos = ((d.videos?.results || []) as { key: string; name: string; type: string; site: string; official?: boolean }[])
+      .filter((v) => v.site === "YouTube" && VIDEO_ORDER.includes(v.type))
+      .sort(
+        (a, b) =>
+          VIDEO_ORDER.indexOf(a.type) - VIDEO_ORDER.indexOf(b.type) || Number(b.official ?? false) - Number(a.official ?? false)
+      )
+      .slice(0, 8)
+      .map(({ key, name, type }) => ({ key, name, type }));
+
     const cast = ((d.credits?.cast || []) as { id: number; name: string; character?: string; profile_path: string | null }[])
       .slice(0, 12)
       .map((c) => ({
@@ -457,6 +482,8 @@ export async function fetchTmdbHeroDetails(
       genres: ((d.genres || []) as { name: string }[]).map((g) => g.name),
       crew,
       backdrops,
+      logo: logoPath ? `${TMDB_IMG}/t/p/w500${logoPath}` : null,
+      videos,
       belongs_to_collection: d.belongs_to_collection ?? null,
     };
   } catch (err) {
@@ -645,43 +672,6 @@ export function fetchIndianTitles(kind: "movie" | "tv"): Promise<TmdbItem[]> {
     },
     kind
   );
-}
-
-/** Popular titles on one streaming provider in India (TMDB watch-provider id). */
-export function fetchProviderTitles(providerId: number, kind: "movie" | "tv"): Promise<TmdbItem[]> {
-  return tmdbList(
-    `/discover/${kind}`,
-    { watch_region: "IN", with_watch_providers: providerId, sort_by: "popularity.desc", include_adult: false },
-    kind
-  );
-}
-
-/** JioHotstar India: Hotstar (122) + JioCinema (220) incl. free/ads, plus flagship TV networks. */
-export async function fetchJioHotstarTitles(): Promise<{ movies: TmdbItem[]; tv: TmdbItem[] }> {
-  const providers: TmdbParams = {
-    watch_region: "IN",
-    with_watch_providers: "122|220",
-    with_watch_monetization_types: "flatrate|free|ads",
-    sort_by: "popularity.desc",
-    include_adult: false,
-  };
-  const networks: TmdbParams = { with_networks: "49|1436|3919", include_adult: false };
-  const [movies, pTv, pTv2, nPop, nVotes] = await Promise.all([
-    tmdbList("/discover/movie", providers, "movie"),
-    tmdbList("/discover/tv", providers, "tv"),
-    tmdbList("/discover/tv", { ...providers, page: 2 }, "tv"),
-    tmdbList("/discover/tv", { ...networks, sort_by: "popularity.desc" }, "tv"),
-    tmdbList("/discover/tv", { ...networks, sort_by: "vote_count.desc" }, "tv"),
-  ]);
-  return { movies, tv: [...pTv, ...pTv2, ...nPop, ...nVotes] };
-}
-
-/** Best TMDB match for a known title (year narrows remakes and namesakes). */
-export async function searchTmdbTitle(kind: "movie" | "tv", query: string, year?: number): Promise<TmdbItem | null> {
-  const params: TmdbParams = { query, include_adult: false };
-  if (year) params[kind === "movie" ? "year" : "first_air_date_year"] = year;
-  const results = await tmdbList(`/search/${kind}`, params, kind);
-  return results.find((r) => r.poster_path) ?? null;
 }
 
 // ── Entertainment schedule ───────────────────────────────────────────────────
