@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Library, LogIn, LogOut, User as UserIcon, UserPlus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useIsClient } from "@/lib/use-is-client";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -18,25 +19,21 @@ export interface ProfileDropdownProps {
 export function ProfileDropdown({ isOpen, onClose, anchorRef }: ProfileDropdownProps) {
   const { user, logout } = useAuth();
   const menuRef = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(false);
+  // True once hydrated (portals need document.body)
+  const mounted = useIsClient();
   const [isClosing, setIsClosing] = useState(false);
   const [position, setPosition] = useState<{ top: number; right: number } | null>(null);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const itemRefs = useRef<(HTMLAnchorElement | HTMLButtonElement | null)[]>([]);
 
-  // Mount flag for SSR safety
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // Compute position synchronously before paint using getBoundingClientRect
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     if (!anchorRef.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
     const right = Math.max(16, window.innerWidth - rect.right);
     const top = rect.bottom + 12;
     setPosition({ top, right });
-  };
+  }, [anchorRef]);
 
   useIsomorphicLayoutEffect(() => {
     if (isOpen) {
@@ -65,7 +62,7 @@ export function ProfileDropdown({ isOpen, onClose, anchorRef }: ProfileDropdownP
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [isOpen, mounted]);
+  }, [isOpen, mounted, updatePosition]);
 
   const requestClose = () => {
     if (isClosing) return;
@@ -76,6 +73,12 @@ export function ProfileDropdown({ isOpen, onClose, anchorRef }: ProfileDropdownP
       setPosition(null);
     }, 120);
   };
+
+  // The listener below calls the latest requestClose without re-subscribing on every render
+  const requestCloseRef = useRef(requestClose);
+  useEffect(() => {
+    requestCloseRef.current = requestClose;
+  });
 
   // Outside click listener
   useEffect(() => {
@@ -89,7 +92,7 @@ export function ProfileDropdown({ isOpen, onClose, anchorRef }: ProfileDropdownP
         anchorRef.current &&
         !anchorRef.current.contains(target)
       ) {
-        requestClose();
+        requestCloseRef.current();
       }
     };
 
@@ -99,7 +102,7 @@ export function ProfileDropdown({ isOpen, onClose, anchorRef }: ProfileDropdownP
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("touchstart", handlePointerDown);
     };
-  }, [isOpen, isClosing]);
+  }, [isOpen, isClosing, anchorRef]);
 
   // Focusable items count: signed in = Profile, Library, Sign out; signed out = Sign in, Create account
   const itemsCount = user ? 3 : 2;

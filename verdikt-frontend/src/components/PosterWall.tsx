@@ -50,11 +50,8 @@ export function PosterWall({ forceFallback = false }: PosterWallProps) {
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    if (forceFallback) {
-      setHasError(true);
-      setIsReady(true);
-      return;
-    }
+    // The fallback is derived below (showFallback), so nothing to load
+    if (forceFallback) return;
 
     let isMounted = true;
 
@@ -135,7 +132,8 @@ export function PosterWall({ forceFallback = false }: PosterWallProps) {
   }, [forceFallback]);
 
   // Fallback static violet/indigo gradient wall if fetch fails or < 6 posters
-  if (hasError) {
+  const showFallback = forceFallback || hasError;
+  if (showFallback) {
     return (
       <div
         aria-hidden="true"

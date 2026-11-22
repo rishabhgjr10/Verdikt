@@ -6,6 +6,7 @@ import com.verdikt.api.service.CollectionService.CollectionDetailDTO;
 import com.verdikt.api.service.CollectionService.CreateCollectionRequest;
 import com.verdikt.api.service.CollectionService.UpdateCollectionRequest;
 import com.verdikt.api.service.MediaItemService;
+import com.verdikt.api.service.ConsensusService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -30,10 +31,13 @@ public class CollectionController {
 
     private final CollectionService collectionService;
     private final MediaItemService mediaItemService;
+    private final ConsensusService consensusService;
 
-    public CollectionController(CollectionService collectionService, MediaItemService mediaItemService) {
+    public CollectionController(CollectionService collectionService, MediaItemService mediaItemService,
+                                ConsensusService consensusService) {
         this.collectionService = collectionService;
         this.mediaItemService = mediaItemService;
+        this.consensusService = consensusService;
     }
 
     @GetMapping
@@ -45,6 +49,7 @@ public class CollectionController {
     public CollectionDetailDTO get(@PathVariable UUID id, @AuthenticationPrincipal UserDetails user) {
         CollectionDetailDTO detail = collectionService.get(user.getUsername(), id);
         mediaItemService.backfillScoresAsync(detail.items());
+        consensusService.attach(detail.items());
         return detail;
     }
 
@@ -69,7 +74,7 @@ public class CollectionController {
     @PutMapping("/{id}/items/{mediaId}")
     public CollectionDTO addItem(@PathVariable UUID id, @PathVariable UUID mediaId,
                                  @AuthenticationPrincipal UserDetails user) {
-        return collectionService.addItem(user.getUsername(), id, mediaId);
+        return ConflictRetry.once(() -> collectionService.addItem(user.getUsername(), id, mediaId));
     }
 
     @DeleteMapping("/{id}/items/{mediaId}")

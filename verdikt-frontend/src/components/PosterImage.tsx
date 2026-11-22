@@ -26,9 +26,11 @@ function sanitizeUrl(url?: string | null): string | null {
   const trimmed = url.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("http://")) return trimmed.replace("http://", "https://");
-  if (trimmed.startsWith("/tmdb-img/")) return trimmed;
-  if (trimmed.startsWith("/")) return `/tmdb-img/t/p/w500${trimmed}`;
-  return trimmed;
+  if (trimmed.startsWith("https://")) return trimmed;
+  if (trimmed.startsWith("/tmdb-img/") || trimmed.startsWith("/avatars/")) return trimmed;
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return `/tmdb-img/t/p/w500${trimmed}`;
+  // Anything else (javascript:, data:, protocol-relative) is not an image URL we serve
+  return null;
 }
 
 export function PosterImage({

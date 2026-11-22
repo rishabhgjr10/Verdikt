@@ -4,7 +4,7 @@
  * Every source degrades to an empty list on failure.
  */
 
-import { discoveryApi, mediaApi, WeeklyPickItem } from "@/lib/api";
+import { discoveryApi, WeeklyPickItem } from "@/lib/api";
 import { MediaItem, MediaType } from "@/types/media";
 import {
   TmdbItem,
@@ -103,43 +103,7 @@ async function weeklyShelf(section: string): Promise<DiscoveryItem[]> {
   return [...week.picks, ...week.pool].map(fromWeeklyPick);
 }
 
-// ── Books via the existing Google Books integration ──────────────────────────
-
-interface BookSeed {
-  title: string;
-  author: string;
-  year: number;
-  /** Accepted Google Books titles (lower-case), e.g. "1984" for Nineteen Eighty-Four. */
-  aliases?: string[];
-}
-
-const NOT_THE_BOOK = /\b(summary|study guide|analysis|critical|companion|notes|workbook|sparknotes|cliffsnotes)\b/i;
-
-function normalize(s: string) {
-  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-}
-
-/** Resolve a known book through the backend search; returns null when nothing credible is found. */
-async function resolveBook(seed: BookSeed): Promise<DiscoveryItem | null> {
-  try {
-    const results = await mediaApi.search(`${seed.title} ${seed.author}`, "BOOK");
-    const wanted = [seed.title, ...(seed.aliases ?? [])].map(normalize);
-    const match = results.find((r) => {
-      if (r.mediaType !== "BOOK" || !r.coverImage || NOT_THE_BOOK.test(r.title)) return false;
-      const t = normalize(r.title);
-      return wanted.some((w) => t === w || t.startsWith(`${w} `));
-    });
-    // Show the original publication year rather than the edition's
-    return match ? { ...match, releaseYear: seed.year } : null;
-  } catch {
-    return null;
-  }
-}
-
-async function resolveBooks(seeds: BookSeed[]): Promise<DiscoveryItem[]> {
-  const resolved = await Promise.all(seeds.map(resolveBook));
-  return resolved.filter((b): b is DiscoveryItem => b !== null);
-}
+// ── Books ──────────────────────────────────────────────────────────────────────
 
 const fallbackBook = (externalId: string, title: string, author: string, year: number, genre: string): DiscoveryItem => ({
   id: `book-${externalId}`,

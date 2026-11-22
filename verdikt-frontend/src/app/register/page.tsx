@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { AlertCircle, ArrowLeft, ArrowRight, Eye, EyeOff, KeyRound, Loader2, Mail, User } from "lucide-react";
 import { PosterWall } from "@/components/PosterWall";
+import { apiErrorMessage } from "@/lib/api";
 import { buildAuthHref, useNextParam } from "@/lib/auth-redirect";
 
 export default function RegisterPage() {
@@ -27,6 +28,11 @@ export default function RegisterPage() {
       setError("Please choose a username.");
       return;
     }
+    // Same rule as the server (AccountRules): no "@", so a username can never look like an email
+    if (!/^[A-Za-z0-9._]{3,30}$/.test(username.trim())) {
+      setError("Usernames use 3 to 30 letters, numbers, dots or underscores.");
+      return;
+    }
     if (!email.trim()) {
       setError("Please enter your email address.");
       return;
@@ -39,8 +45,12 @@ export default function RegisterPage() {
       setError("Please enter a password.");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long.");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+    if (new TextEncoder().encode(password).length > 72) {
+      setError("That password is too long. Use at most 72 characters.");
       return;
     }
 
@@ -54,11 +64,14 @@ export default function RegisterPage() {
         password,
       });
       router.push(nextPath ?? "/");
-    } catch (err: any) {
-      console.error("Registration failed", err);
-      const rawMsg = err?.response?.data?.message || err?.message || "";
-      if (err?.response?.status === 409 || /taken|exists|duplicate/i.test(rawMsg)) {
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const rawMsg = apiErrorMessage(err, "");
+      if (status === 409 || /taken|in use|exists|duplicate/i.test(rawMsg)) {
         setError("Username or email is already taken. Please try another.");
+      } else if (status === 400 && rawMsg) {
+        // The server's validation message says exactly what to change
+        setError(rawMsg);
       } else {
         setError("Registration could not be completed. Please try again.");
       }
@@ -188,7 +201,7 @@ export default function RegisterPage() {
                       setPassword(e.target.value);
                       if (error) setError(null);
                     }}
-                    placeholder="At least 6 characters"
+                    placeholder="At least 8 characters"
                     autoComplete="new-password"
                     className="w-full h-12 rounded-2xl bg-white/5 border border-white/10 pl-11 pr-11 text-base sm:text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-violet-400/60 focus:ring-2 focus:ring-violet-500/20 transition-all duration-300"
                   />

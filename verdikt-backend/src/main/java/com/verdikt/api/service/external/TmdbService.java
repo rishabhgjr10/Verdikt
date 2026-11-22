@@ -31,6 +31,15 @@ public class TmdbService {
 
     private static final Logger log = LoggerFactory.getLogger(TmdbService.class);
 
+    /**
+     * Retries only connection failures, timeouts and 5xx answers. A 4xx (missing title, bad key) or a 429 (rate
+     * limited) won't change on an immediate retry, and retrying them only adds seconds and spends more quota.
+     */
+    private static final Retry RETRY = Retry.fixedDelay(2, Duration.ofSeconds(1))
+            .filter(e -> e instanceof WebClientRequestException
+                    || (e instanceof org.springframework.web.reactive.function.client.WebClientResponseException r
+                        && r.getStatusCode().is5xxServerError()));
+
     private final WebClient tmdbClient;
     private final String apiKey;
 
@@ -76,7 +85,7 @@ public class TmdbService {
                             .build())
                     .retrieve()
                     .bodyToMono(JsonNode.class)
-                    .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(1)))
+                    .retryWhen(RETRY)
                     .onErrorResume(e -> {
                         logNetworkWarning("discoverByProviders", "providers=" + providerIds + ", tv=" + tv, e);
                         return Mono.empty();
@@ -120,7 +129,7 @@ public class TmdbService {
                     })
                     .retrieve()
                     .bodyToMono(JsonNode.class)
-                    .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(1)))
+                    .retryWhen(RETRY)
                     .onErrorResume(e -> {
                         logNetworkWarning("searchMovies", "query=" + query + ", page=" + targetPage, e);
                         return Mono.empty();
@@ -166,7 +175,7 @@ public class TmdbService {
                     })
                     .retrieve()
                     .bodyToMono(JsonNode.class)
-                    .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(1)))
+                    .retryWhen(RETRY)
                     .onErrorResume(e -> {
                         logNetworkWarning("searchSeries", "query=" + query + ", page=" + targetPage, e);
                         return Mono.empty();
@@ -217,7 +226,7 @@ public class TmdbService {
                     })
                     .retrieve()
                     .bodyToMono(JsonNode.class)
-                    .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(1)))
+                    .retryWhen(RETRY)
                     .onErrorResume(e -> {
                         logNetworkWarning("searchAnime", "query=" + query + ", page=" + targetPage, e);
                         return Mono.empty();

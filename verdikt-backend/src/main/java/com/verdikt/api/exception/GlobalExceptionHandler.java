@@ -63,7 +63,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
-        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+        // Library and internal messages can describe the code; the client only needs to know the request was invalid
+        log.debug("Rejected request: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, "Invalid request.");
     }
 
     @ExceptionHandler(ExternalProviderException.class)

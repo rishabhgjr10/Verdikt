@@ -3,6 +3,7 @@ package com.verdikt.api.controller;
 import com.verdikt.api.dto.MediaItemDTO;
 import com.verdikt.api.exception.BadRequestException;
 import com.verdikt.api.service.MediaItemService;
+import com.verdikt.api.service.ConsensusService;
 import com.verdikt.api.service.MostInterestedService;
 import com.verdikt.api.service.UserMediaService;
 import org.springframework.http.CacheControl;
@@ -31,15 +32,18 @@ public class UserMediaController {
     private final UserMediaService userMediaService;
     private final MostInterestedService mostInterestedService;
     private final MediaItemService mediaItemService;
+    private final ConsensusService consensusService;
 
     public UserMediaController(UserMediaService userMediaService, MostInterestedService mostInterestedService,
-                               MediaItemService mediaItemService) {
+                               MediaItemService mediaItemService, ConsensusService consensusService) {
         this.userMediaService = userMediaService;
         this.mostInterestedService = mostInterestedService;
         this.mediaItemService = mediaItemService;
+        this.consensusService = consensusService;
     }
 
-    public record ToggleRequest(Boolean value) {
+    /** deleteReview: unmarking a title the user reviewed deletes that review, so the client must ask for it explicitly */
+    public record ToggleRequest(Boolean value, Boolean deleteReview) {
         boolean required() {
             if (value == null) {
                 throw new BadRequestException("value (true/false) is required");
@@ -58,35 +62,35 @@ public class UserMediaController {
     public UserMediaService.WatchedResult setWatched(@PathVariable UUID id,
                                                      @RequestBody ToggleRequest body,
                                                      @AuthenticationPrincipal UserDetails user) {
-        return userMediaService.setWatched(user.getUsername(), id, body.required());
+        return ConflictRetry.once(() -> userMediaService.setWatched(user.getUsername(), id, body.required(), Boolean.TRUE.equals(body.deleteReview())));
     }
 
     @PutMapping("/media/{id}/watch-later")
     public UserMediaService.WatchLaterResult setWatchLater(@PathVariable UUID id,
                                                            @RequestBody ToggleRequest body,
                                                            @AuthenticationPrincipal UserDetails user) {
-        return userMediaService.setWatchLater(user.getUsername(), id, body.required());
+        return ConflictRetry.once(() -> userMediaService.setWatchLater(user.getUsername(), id, body.required()));
     }
 
     @PutMapping("/media/{id}/favorite")
     public UserMediaService.FavoriteResult setFavorite(@PathVariable UUID id,
                                                        @RequestBody ToggleRequest body,
                                                        @AuthenticationPrincipal UserDetails user) {
-        return userMediaService.setFavorite(user.getUsername(), id, body.required());
+        return ConflictRetry.once(() -> userMediaService.setFavorite(user.getUsername(), id, body.required()));
     }
 
     @GetMapping("/me/watch-later")
     public List<MediaItemDTO> getWatchLater(@AuthenticationPrincipal UserDetails user) {
         List<MediaItemDTO> items = userMediaService.getWatchLater(user.getUsername());
         mediaItemService.backfillScoresAsync(items);
-        return items;
+        return consensusService.attach(items);
     }
 
     @GetMapping("/me/favorites")
     public List<MediaItemDTO> getFavorites(@AuthenticationPrincipal UserDetails user) {
         List<MediaItemDTO> items = userMediaService.getFavorites(user.getUsername());
         mediaItemService.backfillScoresAsync(items);
-        return items;
+        return consensusService.attach(items);
     }
 
     @GetMapping("/media/most-interested")

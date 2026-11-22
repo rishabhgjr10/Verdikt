@@ -2,9 +2,10 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarDays, Heart, Layers, MessageCircle, User as UserIcon, Users } from "lucide-react";
+import { CalendarDays, Heart, Layers, MessageCircle, User as UserIcon } from "lucide-react";
 import { CollectionSummary, MediaItem, MediaType, ReviewWithRelations, Verdict } from "@/types/media";
 import { collectionsApi, reviewApi, userMediaApi } from "@/lib/api";
+import { isUnreleased } from "@/lib/tmdb";
 import { SlidingPill } from "@/components/ui/SlidingPill";
 import { verdictOption, VERDICT_OPTIONS } from "@/components/reviews/verdicts";
 import { InstagramIcon, XIcon, YouTubeIcon } from "@/components/profile/SocialIcons";
@@ -131,6 +132,7 @@ export default function ProfilePage() {
   const [reviews, setReviews] = useState<ReviewWithRelations[] | null>(null);
   const [collections, setCollections] = useState<CollectionSummary[] | null>(null);
   const [favorites, setFavorites] = useState<MediaItem[] | null>(null);
+  const [upcoming, setUpcoming] = useState<MediaItem[] | null>(null);
   const [verdictFilter, setVerdictFilter] = useState<Verdict | "ALL">("ALL");
   const [typeFilter, setTypeFilter] = useState<MediaType | "ALL">("ALL");
 
@@ -145,6 +147,17 @@ export default function ProfilePage() {
       .list()
       .then((c) => !cancelled && setCollections(c.filter((x) => !x.isSystem)))
       .catch(() => !cancelled && setCollections([]));
+    userMediaApi
+      .getWatchLater()
+      .then((list) => {
+        if (cancelled) return;
+        const soon = list
+          .filter((m) => isUnreleased(m))
+          .sort((a, b) => (a.releaseDate ?? String(a.releaseYear ?? "9999")).localeCompare(b.releaseDate ?? String(b.releaseYear ?? "9999")))
+          .slice(0, 5);
+        setUpcoming(soon);
+      })
+      .catch(() => !cancelled && setUpcoming([]));
     userMediaApi
       .getFavorites()
       .then((f) => !cancelled && setFavorites(f))
@@ -200,16 +213,6 @@ export default function ProfilePage() {
           )}
 
           <div className="mt-4 w-full space-y-2 text-sm text-zinc-400">
-            <p className="flex items-center justify-center gap-2">
-              <Users className="w-4 h-4" aria-hidden="true" />
-              <span>
-                <strong className="text-white font-semibold">0</strong> Followers
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                <strong className="text-white font-semibold">0</strong> Following
-              </span>
-            </p>
             {joined && (
               <p className="flex items-center justify-center gap-2">
                 <CalendarDays className="w-4 h-4" aria-hidden="true" />
@@ -353,10 +356,41 @@ export default function ProfilePage() {
         <h2 id="interested-title" className="text-sm font-semibold uppercase tracking-wider text-zinc-400 mb-3">
           Interested In
         </h2>
-        <div className={`${GLASS} rounded-2xl p-6 text-center`}>
-          <CalendarDays className="w-6 h-6 text-zinc-600 mx-auto" aria-hidden="true" />
-          <p className="mt-2 text-sm text-zinc-400">No upcoming content</p>
-        </div>
+        {/* Titles on your Watch Later that haven't come out yet, soonest first */}
+        {upcoming === null ? (
+          <div className={`${GLASS} rounded-2xl h-24 animate-pulse`} />
+        ) : upcoming.length === 0 ? (
+          <div className={`${GLASS} rounded-2xl p-6 text-center`}>
+            <CalendarDays className="w-6 h-6 text-zinc-600 mx-auto" aria-hidden="true" />
+            <p className="mt-2 text-sm text-zinc-400">Nothing on your Watch Later is releasing soon.</p>
+          </div>
+        ) : (
+          <ul className={`${GLASS} rounded-2xl p-3 space-y-1`}>
+            {upcoming.map((m) => (
+              <li key={m.id}>
+                <Link
+                  href={`/media/${m.id}`}
+                  className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/[0.05] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                >
+                  <div className="w-10 shrink-0 aspect-[2/3] rounded-md overflow-hidden bg-zinc-800 border border-white/10">
+                    {m.coverImage && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={m.coverImage.replace(/^http:\/\//, "https://")} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    )}
+                  </div>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-white truncate">{m.title}</span>
+                    <span className="block text-xs text-zinc-500">
+                      {m.releaseDate
+                        ? new Date(`${m.releaseDate.slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+                        : m.releaseYear}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </aside>
     </main>
   );

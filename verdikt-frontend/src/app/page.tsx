@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NavMediaCategory } from "@/components/Navbar";
@@ -12,6 +12,7 @@ import {
   sanitizeImageUrl,
   sanitizeBackdropUrl,
   audienceVerdict,
+  cardVerdict,
   fetchTrendingMovies,
   fetchTrendingTv,
   fetchTrendingAnime,
@@ -20,8 +21,9 @@ import {
   deduplicateMedia,
   fetchTmdbTrailerUrl,
 } from "@/lib/tmdb";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Film, Tv, Sparkles, Gamepad2, BookOpen, Play, Shuffle } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Play, Shuffle } from "lucide-react";
 import { nextShuffle } from "@/lib/shuffle";
+import { VERDICT_STYLE as VERDICT_CONFIG } from "@/components/reviews/verdicts";
 import { TrailerModal } from "@/components/TrailerModal";
 import {
   PLATFORMS,
@@ -33,43 +35,6 @@ import {
 } from "@/lib/discovery";
 
 // ── Verdict Configuration & Color Tokens ─────────────────────────────────────
-const VERDICT_CONFIG: Record<
-  Verdict,
-  { label: string; color: string; textClass: string; score: number }
-> = {
-  PERFECTION: {
-    label: "Perfection",
-    color: "#a855f7",
-    textClass: "text-[#a855f7]",
-    score: 4,
-  },
-  GO_FOR_IT: {
-    label: "Go For It",
-    color: "#10b981",
-    textClass: "text-[#10b981]",
-    score: 3,
-  },
-  TIMEPASS: {
-    label: "Timepass",
-    color: "#f59e0b",
-    textClass: "text-[#f59e0b]",
-    score: 2,
-  },
-  SKIP_IT: {
-    label: "Skip",
-    color: "#ef4444",
-    textClass: "text-[#ef4444]",
-    score: 1,
-  },
-};
-
-const TYPE_ICON: Record<string, React.ElementType> = {
-  MOVIE: Film,
-  SERIES: Tv,
-  ANIME: Sparkles,
-  GAME: Gamepad2,
-  BOOK: BookOpen,
-};
 
 function getItemHref(item: MediaItem): string {
   const isUuid =
@@ -354,7 +319,7 @@ interface FeedItem extends MediaItem {
 }
 
 function PosterCard({ item }: { item: FeedItem }) {
-  const verdict = audienceVerdict(item);
+  const verdict = cardVerdict(item);
   const cfg = verdict ? VERDICT_CONFIG[verdict] : null;
 
   return (
@@ -757,11 +722,63 @@ function PlatformShelf() {
   );
 }
 
+// ── Feed loaders (plain async functions; the page sets state from their results) ─────────────
+/** "Talk Of The Town": ten titles for the category, de-duplicated */
+async function loadPosters(cat: NavMediaCategory): Promise<FeedItem[]> {
+  if (cat === "ALL") {
+    // Balanced mix (Indian + global movies/series, anime, books, a game), already
+    // de-duplicated and interleaved; franchise grouping would drop e.g. a Dune book next to the film.
+    return (await fetchBalancedFeed()).slice(0, 10);
+  }
+  let items: FeedItem[] = [];
+  if (cat === "MOVIE" || cat === "SERIES") {
+    // Half Indian (origin IN), half global trending
+    items = await fetchBlendedCategory(cat);
+  } else if (cat === "ANIME") {
+    items = (await fetchTrendingAnime()).map((a) => tmdbToMediaItem(a, "ANIME"));
+  } else {
+    items = await mediaApi.search("", cat as MediaType).catch(() => []);
+  }
+  return deduplicateFranchises(items).slice(0, 10);
+}
+
+/** Today's trending titles: the hero's top movie, series and anime, plus the "Watch Now" pool */
+async function loadLandscape(): Promise<{
+  hero: { movie: HeroItem | null; series: HeroItem | null; anime: HeroItem | null };
+  items: FeedItem[];
+}> {
+  const [movies, tvShows, anime] = await Promise.all([
+    fetchTrendingMovies(),
+    fetchTrendingTv(),
+    fetchTrendingAnime().catch(() => []),
+  ]);
+  const all = [
+    ...movies.map((m) => tmdbToMediaItem(m, "MOVIE")),
+    ...tvShows.map((t) => tmdbToMediaItem(t, "SERIES")),
+  ];
+  // Top title with a backdrop; anime skips anything already featured as the series
+  const toHero = (list: typeof movies, type: MediaType, skipId?: number): HeroItem | null => {
+    const top = list.find((m) => m.backdrop_path && m.id !== skipId);
+    return top
+      ? {
+          ...tmdbToMediaItem(top, type),
+          genres: ((top as typeof top & { genre_ids?: number[] }).genre_ids ?? []).map((g) => TMDB_GENRES[g]).filter(Boolean),
+        }
+      : null;
+  };
+  const series = toHero(tvShows, "SERIES");
+  return {
+    hero: { movie: toHero(movies, "MOVIE"), series, anime: toHero(anime, "ANIME", series ? Number(series.externalId) : undefined) },
+    items: deduplicateMedia(all.filter((i) => Boolean(i.backdropImage))),
+  };
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN HOMEPAGE
 // ══════════════════════════════════════════════════════════════════════════════
 export default function HomePage() {
-  const [category, setCategory] = useState<NavMediaCategory>("ALL");
+  // The feed shows every type; per-category browsing lives on /search
+  const category: NavMediaCategory = "ALL";
 
   // Data states
   const [posterItems, setPosterItems] = useState<FeedItem[]>([]);
@@ -789,87 +806,6 @@ export default function HomePage() {
   const [postersLoading, setPostersLoading] = useState(true);
   const [landscapeLoading, setLandscapeLoading] = useState(true);
 
-  // ── Smart Feed Deduplication & Franchise Grouping ──────────────────────────
-  const fetchPosters = useCallback(async (cat: NavMediaCategory) => {
-    setPostersLoading(true);
-    try {
-      let items: FeedItem[] = [];
-
-      if (cat === "ALL") {
-        // Balanced mix (Indian + global movies/series, anime, books, a game), already
-        // de-duplicated and interleaved; franchise grouping would drop e.g. a Dune book next to the film.
-        const feed = await fetchBalancedFeed();
-        setPosterItems(feed.slice(0, 10));
-        return;
-      } else if (cat === "MOVIE" || cat === "SERIES") {
-        // Half Indian (origin IN), half global trending
-        items = await fetchBlendedCategory(cat);
-      } else if (cat === "ANIME") {
-        const anime = await fetchTrendingAnime();
-        items = anime.map((a) => tmdbToMediaItem(a, "ANIME"));
-      } else {
-        try {
-          const res = await mediaApi.search("", cat as MediaType);
-          items = res;
-        } catch {
-          items = [];
-        }
-      }
-
-      const deduplicated = deduplicateFranchises(items);
-      setPosterItems(deduplicated.slice(0, 10));
-    } catch (err) {
-      console.error("Failed to fetch posters", err);
-      setPosterItems([]);
-    } finally {
-      setPostersLoading(false);
-    }
-  }, []);
-
-  // ── Fetch "Watch Now" (Landscape Banners) ──────────────────────────────────
-  const fetchLandscape = useCallback(async () => {
-    setLandscapeLoading(true);
-    try {
-      const [movies, tvShows, anime] = await Promise.all([
-        fetchTrendingMovies(),
-        fetchTrendingTv(),
-        fetchTrendingAnime().catch(() => []),
-      ]);
-
-      const all = [
-        ...movies.map((m) => tmdbToMediaItem(m, "MOVIE")),
-        ...tvShows.map((t) => tmdbToMediaItem(t, "SERIES")),
-      ];
-
-      // Top title with a backdrop; anime skips anything already featured as the series
-      const toHero = (list: typeof movies, type: MediaType, skipId?: number): HeroItem | null => {
-        const top = list.find((m) => m.backdrop_path && m.id !== skipId);
-        return top
-          ? {
-              ...tmdbToMediaItem(top, type),
-              genres: ((top as typeof top & { genre_ids?: number[] }).genre_ids ?? []).map((g) => TMDB_GENRES[g]).filter(Boolean),
-            }
-          : null;
-      };
-      const series = toHero(tvShows, "SERIES");
-      setHeroTrending({
-        movie: toHero(movies, "MOVIE"),
-        series,
-        anime: toHero(anime, "ANIME", series ? Number(series.externalId) : undefined),
-      });
-
-      const withBackdrops = all.filter((i) => Boolean(i.backdropImage));
-      const uniqueBackdrops = deduplicateMedia(withBackdrops);
-
-      setLandscapeItems(uniqueBackdrops);
-    } catch (err) {
-      console.error("Failed to fetch landscape items", err);
-      setLandscapeItems([]);
-    } finally {
-      setLandscapeLoading(false);
-    }
-  }, []);
-
   // ── Curated weekly shelves ──────────────────────────────────────────────────
   const [editorsPicks, setEditorsPicks] = useState<FeedItem[] | null>(null);
   const [worthReading, setWorthReading] = useState<FeedItem[] | null>(null);
@@ -887,14 +823,41 @@ export default function HomePage() {
     };
   }, []);
 
-  // ── Effects ─────────────────────────────────────────────────────────────────
+  // ── Effects: loaders return data; state is set in the callbacks, and a stale result is dropped ──────────
   useEffect(() => {
-    fetchPosters(category);
-  }, [category, fetchPosters]);
+    let cancelled = false;
+    loadPosters(category)
+      .catch((err) => {
+        console.error("Failed to fetch posters", err);
+        return [] as FeedItem[];
+      })
+      .then((items) => {
+        if (cancelled) return;
+        setPosterItems(items);
+        setPostersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [category]);
 
   useEffect(() => {
-    fetchLandscape();
-  }, [fetchLandscape]);
+    let cancelled = false;
+    loadLandscape()
+      .catch((err) => {
+        console.error("Failed to fetch landscape items", err);
+        return { hero: { movie: null, series: null, anime: null }, items: [] as FeedItem[] };
+      })
+      .then(({ hero, items }) => {
+        if (cancelled) return;
+        setHeroTrending(hero);
+        setLandscapeItems(items);
+        setLandscapeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Book reuses this week's first "Worth Your Time To Read" pick, so the hero adds no Google Books calls
   const firstBook = worthReading?.[0];

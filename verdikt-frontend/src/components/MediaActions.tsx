@@ -162,7 +162,7 @@ export function MediaActions({
   const confirmUnwatch = async () => {
     setUnwatching(true);
     try {
-      const result = await userMediaApi.setWatched(mediaId, false);
+      const result = await userMediaApi.setWatched(mediaId, false, { deleteReview: true });
       onWatchedChange?.(false);
       const deletedReview = !!result.deletedReview;
       setState((s) => ({ ...s, watched: false, watchLater: result.watchLater, hasReview: false }));

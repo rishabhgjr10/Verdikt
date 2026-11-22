@@ -7,7 +7,7 @@ import { ReviewCard } from "@/components/reviews/ReviewCard";
 import { ReviewComposer } from "@/components/reviews/ReviewComposer";
 import { DeleteReviewDialog } from "@/components/reviews/DeleteReviewDialog";
 import { ShareCardModal } from "@/components/reviews/ShareCardModal";
-import { verdictOption } from "@/components/reviews/verdicts";
+import { topVerdict, verdictOption } from "@/components/reviews/verdicts";
 import { useToast } from "@/context/ToastContext";
 import { TrailerModal } from "@/components/TrailerModal";
 import { ReviewModal } from "@/components/ReviewModal";
@@ -32,9 +32,11 @@ import { ExternalReviews } from "@/components/ExternalReviews";
 import { ExpandableDescription } from "@/components/MediaHeroDetails";
 import { NavMediaCategory } from "@/components/Navbar";
 import { PosterImage } from "@/components/PosterImage";
+import { VERDICT_STYLE as VERDICT_CONFIG } from "@/components/reviews/verdicts";
 import {
   getPlatformSearchUrl,
   getPlatformColor,
+  safeTrailerUrl,
   youtubeTrailerUrl,
 } from "@/lib/streamingUtils";
 import {
@@ -50,6 +52,7 @@ import {
   TmdbWatchProvider,
   WatchOffer,
   audienceVerdict,
+  isUnreleased as isTitleUnreleased,
 } from "@/lib/tmdb";
 import {
   Play,
@@ -282,35 +285,6 @@ const CONSENSUS_BADGE: Record<Verdict, string> = {
   SKIP_IT: "border-rose-400/50 bg-rose-400/10 text-rose-400 shadow-[0_0_14px_rgba(251,113,133,0.35)]",
 };
 
-const VERDICT_CONFIG: Record<
-  Verdict,
-  { label: string; color: string; textClass: string; score: number }
-> = {
-  PERFECTION: {
-    label: "Perfection",
-    color: "#a855f7",
-    textClass: "text-[#a855f7]",
-    score: 4,
-  },
-  GO_FOR_IT: {
-    label: "Go For It",
-    color: "#10b981",
-    textClass: "text-[#10b981]",
-    score: 3,
-  },
-  TIMEPASS: {
-    label: "Timepass",
-    color: "#f59e0b",
-    textClass: "text-[#f59e0b]",
-    score: 2,
-  },
-  SKIP_IT: {
-    label: "Skip",
-    color: "#ef4444",
-    textClass: "text-[#ef4444]",
-    score: 1,
-  },
-};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MEDIA_TYPES: MediaType[] = ["MOVIE", "SERIES", "ANIME", "GAME", "BOOK"];
@@ -424,7 +398,6 @@ export default function MediaDetailPage({
   const [deleteTarget, setDeleteTarget] = useState<ReviewWithRelations | null>(null);
   const [shareTarget, setShareTarget] = useState<ReviewWithRelations | null>(null);
   const { showToast } = useToast();
-  const [posterError, setPosterError] = useState(false);
   const [backdropError, setBackdropError] = useState(false);
 
   useEffect(() => {
@@ -479,7 +452,7 @@ export default function MediaDetailPage({
           const recs = await fetchTmdbRecommendations(item.mediaType, extId);
           setRecommendations(recs);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error loading media details", err);
         setError("Failed to load media details.");
       } finally {
@@ -691,9 +664,8 @@ export default function MediaDetailPage({
   // Not out yet (TMDB release date in the future): no watching or verdicts until it releases
   // Without any date, a future release year still keeps "Mark as Watched" and verdicts off titles that aren't out yet
   const releaseAt = releaseDateIso ? new Date(`${releaseDateIso.slice(0, 10)}T00:00:00`) : null;
-  const isUnreleased =
-    (!!releaseAt && releaseAt.getTime() > now) ||
-    (!releaseAt && !!mediaItem.releaseYear && mediaItem.releaseYear > new Date(now).getFullYear());
+  // Shared rule (lib/tmdb isUnreleased), the same one the API enforces when a verdict is posted
+  const isUnreleased = isTitleUnreleased({ releaseDate: releaseDateIso, releaseYear: mediaItem.releaseYear }, new Date(now));
   const daysToRelease = releaseAt ? Math.ceil((releaseAt.getTime() - now) / 86_400_000) : 0;
 
   // One entry point for writing a verdict: edit your own, else jump to the inline composer, else the modal
@@ -745,10 +717,8 @@ export default function MediaDetailPage({
 
   // Consensus verdict: the most common member verdict, else TMDB's audience score
   const consensus = (() => {
-    if (reviews.length > 0) {
-      const counts = new Map<Verdict, number>();
-      for (const r of reviews) counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
-      const top = [...counts].sort((a, b) => b[1] - a[1])[0][0];
+    const top = topVerdict(reviews.map((r) => r.verdict));
+    if (top) {
       return { verdict: top, source: `Community verdict from ${reviews.length} member review${reviews.length === 1 ? "" : "s"}` };
     }
     const audience = heroDetails
@@ -993,10 +963,10 @@ export default function MediaDetailPage({
 
               {mediaItem.mediaType !== "BOOK" && mediaItem.mediaType !== "GAME" && (
                 <a
-                  href={mediaItem.trailerUrl || youtubeTrailerUrl(mediaItem.title)}
+                  href={safeTrailerUrl(mediaItem.trailerUrl) || youtubeTrailerUrl(mediaItem.title)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title={mediaItem.trailerUrl ? undefined : "Opens a trailer search on YouTube"}
+                  title={safeTrailerUrl(mediaItem.trailerUrl) ? undefined : "Opens a trailer search on YouTube"}
                   className="flex items-center gap-2 bg-white/[0.05] hover:bg-white/[0.1] backdrop-blur-lg border border-white/[0.1] text-zinc-200 hover:text-white font-medium text-sm px-4 py-2.5 rounded-full transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                 >
                   <Play className="w-4 h-4 fill-current" aria-hidden="true" />

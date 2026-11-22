@@ -2,6 +2,7 @@
 
 import React, { useEffect } from "react";
 import { X, Film } from "lucide-react";
+import { youtubeVideoId } from "@/lib/streamingUtils";
 
 interface TrailerModalProps {
   isOpen: boolean;
@@ -35,20 +36,9 @@ export const TrailerModal: React.FC<TrailerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const getEmbedUrl = (url: string | null): string | null => {
-    if (!url) return null;
-    let videoId = "";
-    if (url.includes("youtube.com/watch?v=")) {
-      videoId = url.split("v=")[1]?.split("&")[0] || "";
-    } else if (url.includes("youtu.be/")) {
-      videoId = url.split("youtu.be/")[1]?.split("?")[0] || "";
-    } else if (url.includes("youtube.com/embed/")) {
-      return url;
-    }
-    return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1` : null;
-  };
-
-  const embedUrl = getEmbedUrl(trailerUrl);
+  // Parsed, not substring-matched: only a real YouTube video id ever reaches the iframe
+  const videoId = youtubeVideoId(trailerUrl);
+  const embedUrl = videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1` : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">

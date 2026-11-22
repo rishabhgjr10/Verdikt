@@ -57,7 +57,19 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Stamped into every token; raising it ("sign out of all devices") makes every older token invalid */
+    @Column(name = "token_version", nullable = false, columnDefinition = "INT NOT NULL DEFAULT 0")
+    private int tokenVersion;
+
     public User() {
+    }
+
+    public int getTokenVersion() {
+        return tokenVersion;
+    }
+
+    public void setTokenVersion(int tokenVersion) {
+        this.tokenVersion = tokenVersion;
     }
 
     public User(UUID id, String username, String email, String passwordHash, String avatarUrl, Instant createdAt) {

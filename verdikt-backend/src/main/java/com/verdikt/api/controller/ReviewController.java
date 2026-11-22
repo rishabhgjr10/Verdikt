@@ -71,7 +71,7 @@ public class ReviewController {
     public ResponseEntity<ReviewService.LikeResult> toggleLike(
             @PathVariable UUID reviewId,
             @AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(reviewService.toggleLike(reviewId, userDetails.getUsername()));
+        return ResponseEntity.ok(ConflictRetry.once(() -> reviewService.toggleLike(reviewId, userDetails.getUsername())));
     }
 
     @GetMapping("/{reviewId}/comments")
@@ -86,6 +86,13 @@ public class ReviewController {
             @AuthenticationPrincipal UserDetails userDetails) {
         ReviewCommentDTO comment = reviewService.addComment(reviewId, request.text(), userDetails.getUsername());
         return ResponseEntity.status(HttpStatus.CREATED).body(comment);
+    }
+
+    @DeleteMapping("/{reviewId}/comments/{commentId}")
+    public ResponseEntity<Void> deleteComment(@PathVariable UUID reviewId, @PathVariable UUID commentId,
+                                              @AuthenticationPrincipal UserDetails userDetails) {
+        reviewService.deleteComment(reviewId, commentId, userDetails.getUsername());
+        return ResponseEntity.noContent().build();
     }
 
     private static String username(UserDetails userDetails) {

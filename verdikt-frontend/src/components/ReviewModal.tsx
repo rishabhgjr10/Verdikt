@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { MediaItem, Verdict } from "@/types/media";
-import { reviewApi } from "@/lib/api";
+import { reviewApi, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { X, Sparkles, AlertCircle, ShieldAlert, CheckCircle2, ThumbsUp, XCircle } from "lucide-react";
@@ -90,9 +90,8 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
       onClose();
       showToast("Your verdict is submitted", { detail: mediaItem.title, alert: { href: `/media/${mediaItem.id}` } });
       if (onSuccess) onSuccess();
-    } catch (err: any) {
-      console.error("Failed to submit review", err);
-      setError(err.response?.data?.message || "Failed to submit review. Please try again.");
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "Failed to submit review. Please try again."));
     } finally {
       setIsSubmitting(false);
     }

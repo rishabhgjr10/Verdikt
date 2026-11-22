@@ -29,6 +29,9 @@ public class MediaItemDTO {
     private Integer voteCount;
     /** TMDB vote_average (0-10); the frontend turns it into a verdict with one shared rule */
     private Double voteAverage;
+    /** Members' verdict (ConsensusService); null when nobody has reviewed the title */
+    private com.verdikt.api.Verdict consensus;
+    private Long reviewCount;
     private Double popularity;
 
     public MediaItemDTO() {
@@ -169,6 +172,22 @@ public class MediaItemDTO {
 
     public void setVoteCount(Integer voteCount) {
         this.voteCount = voteCount;
+    }
+
+    public com.verdikt.api.Verdict getConsensus() {
+        return consensus;
+    }
+
+    public void setConsensus(com.verdikt.api.Verdict consensus) {
+        this.consensus = consensus;
+    }
+
+    public Long getReviewCount() {
+        return reviewCount;
+    }
+
+    public void setReviewCount(Long reviewCount) {
+        this.reviewCount = reviewCount;
     }
 
     public Double getVoteAverage() {

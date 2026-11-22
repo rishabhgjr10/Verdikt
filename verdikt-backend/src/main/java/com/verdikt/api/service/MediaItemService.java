@@ -14,7 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -30,6 +34,20 @@ public class MediaItemService {
     private final UnifiedMediaSearchService unifiedMediaSearchService;
     private final ConcurrentHashMap<String, Object> importLocks = new ConcurrentHashMap<>();
     private final Set<UUID> detailsBackfillAttempted = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Provider ids that just came back empty, so repeated requests (or a script walking ids) don't each cost a provider
+     * call. Short-lived because an outage also looks empty.
+     */
+    private final ConcurrentHashMap<String, Instant> missingTitles = new ConcurrentHashMap<>();
+    private static final java.time.Duration MISSING_TTL = java.time.Duration.ofMinutes(10);
+
+    private void rememberMissing(String key) {
+        if (missingTitles.size() > 10_000) {
+            missingTitles.entrySet().removeIf(e -> e.getValue().isBefore(Instant.now()));
+        }
+        missingTitles.put(key, Instant.now().plus(MISSING_TTL));
+    }
     private final java.util.concurrent.ExecutorService backfillExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "media-details-backfill");
         t.setDaemon(true);
@@ -41,25 +59,31 @@ public class MediaItemService {
         this.unifiedMediaSearchService = unifiedMediaSearchService;
     }
 
-    @Transactional(readOnly = true)
     public List<MediaItemDTO> searchMedia(String query, String mediaTypeFilter) {
         return searchMedia(query, mediaTypeFilter, 1);
     }
 
-    @Transactional(readOnly = true)
+    /** Local matches shown at most; the providers supply the rest */
+    static final int LOCAL_RESULT_LIMIT = 40;
+    /** Provider pages past this add nothing useful and only spend quota */
+    static final int MAX_SEARCH_PAGE = 20;
+
+    /**
+     * Deliberately not @Transactional: each repository call takes a connection only for its own short query, so a slow
+     * provider (up to the search timeout) never holds one of the pool's few connections while every other request waits.
+     */
     public List<MediaItemDTO> searchMedia(String query, String mediaTypeFilter, int page) {
         List<MediaItem> localResults = Collections.emptyList();
-        String q = query != null ? query : "";
+        String q = query != null ? query.trim() : "";
+        page = Math.max(1, Math.min(page, MAX_SEARCH_PAGE));
+        Pageable firstLocal = PageRequest.of(0, LOCAL_RESULT_LIMIT);
         try {
-            if (mediaTypeFilter != null && !mediaTypeFilter.equalsIgnoreCase("ALL")) {
-                try {
-                    MediaType mediaType = MediaType.valueOf(mediaTypeFilter.toUpperCase());
-                    localResults = mediaItemRepository.findByMediaTypeAndTitleContainingIgnoreCase(mediaType, q);
-                } catch (IllegalArgumentException e) {
-                    localResults = mediaItemRepository.findByTitleContainingIgnoreCase(q);
-                }
-            } else {
-                localResults = mediaItemRepository.findByTitleContainingIgnoreCase(q);
+            // Local matches only on page 1 and for real queries: "" or one letter would match most of the catalogue
+            if (page == 1 && q.length() >= 2) {
+                MediaType mediaType = parseType(mediaTypeFilter);
+                localResults = mediaType != null
+                        ? mediaItemRepository.findByMediaTypeAndTitleContainingIgnoreCase(mediaType, q, firstLocal)
+                        : mediaItemRepository.findByTitleContainingIgnoreCase(q, firstLocal);
             }
         } catch (Exception e) {
             log.warn("Local DB search failed for query='{}': {}", q, e.getMessage());
@@ -81,21 +105,30 @@ public class MediaItemService {
         }
 
         if (externalResults != null) {
+            // One query for every provider result instead of one per result
+            Map<String, List<MediaItem>> stored = Collections.emptyMap();
+            try {
+                List<String> ids = externalResults.stream().filter(java.util.Objects::nonNull)
+                        .map(MediaItemDTO::getExternalId).filter(java.util.Objects::nonNull).distinct().toList();
+                if (!ids.isEmpty()) {
+                    stored = mediaItemRepository.findByExternalIdIn(ids).stream()
+                            .collect(Collectors.groupingBy(MediaItem::getExternalId));
+                }
+            } catch (Exception e) {
+                log.warn("Failed checking local DB for provider results: {}", e.getMessage());
+            }
             for (MediaItemDTO ext : externalResults) {
                 if (ext == null || ext.getExternalId() == null || ext.getMediaType() == null) {
                     continue;
                 }
-                try {
-                    List<MediaType> candidates = getCandidateMediaTypes(ext.getMediaType());
-                    Optional<MediaItem> existing = mediaItemRepository.findFirstByExternalIdAndMediaTypeIn(
-                            ext.getExternalId(), candidates);
-                    if (existing.isPresent()) {
-                        ext.setId(existing.get().getId());
-                        ext.setMediaType(existing.get().getMediaType());
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed checking local DB for existing item [extId={}]: {}", ext.getExternalId(), e.getMessage());
-                }
+                List<MediaType> candidates = getCandidateMediaTypes(ext.getMediaType());
+                stored.getOrDefault(ext.getExternalId(), List.of()).stream()
+                        .filter(m -> candidates.contains(m.getMediaType()))
+                        .findFirst()
+                        .ifPresent(existing -> {
+                            ext.setId(existing.getId());
+                            ext.setMediaType(existing.getMediaType());
+                        });
 
                 Optional<MediaItemDTO> localMatch = results.stream().filter(
                         local -> local != null
@@ -114,6 +147,15 @@ public class MediaItemService {
         }
 
         return results;
+    }
+
+    private static MediaType parseType(String filter) {
+        if (filter == null || filter.equalsIgnoreCase("ALL")) return null;
+        try {
+            return MediaType.valueOf(filter.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     @Transactional
@@ -188,6 +230,10 @@ public class MediaItemService {
 
         // Lock keyed by external ID (normalized for TV series / anime namespace)
         String lockKey = (mediaType == MediaType.SERIES || mediaType == MediaType.ANIME ? "TV:" : mediaType.name() + ":") + externalId;
+        Instant missingUntil = missingTitles.get(lockKey);
+        if (missingUntil != null && missingUntil.isAfter(Instant.now())) {
+            throw new ResourceNotFoundException("Media item not found.");
+        }
         Object lock = importLocks.computeIfAbsent(lockKey, k -> new Object());
 
         synchronized (lock) {
@@ -201,6 +247,7 @@ public class MediaItemService {
                 // 2. Fetch from external provider (resolves SERIES -> ANIME rule inside provider mapping)
                 MediaItemDTO externalDto = unifiedMediaSearchService.fetchExternalDetails(externalId, mediaType);
                 if (externalDto == null) {
+                    rememberMissing(lockKey);
                     throw new ResourceNotFoundException("Media item not found from external provider: " + externalId + " (" + mediaType + ")");
                 }
 
@@ -213,7 +260,7 @@ public class MediaItemService {
 
                 // 4. Save with race protection against concurrent insert collisions
                 try {
-                    return saveDTOToEntity(externalDto, true);
+                    return saveDTOToEntity(externalDto);
                 } catch (DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException e) {
                     log.warn("Concurrent insert collision for externalId='{}' (resolvedType={}), re-fetching: {}",
                             externalId, resolvedType, e.getMessage());
@@ -227,32 +274,6 @@ public class MediaItemService {
         }
     }
 
-    public MediaItem getOrCreateFromDTO(MediaItemDTO dto) {
-        if (dto == null) {
-            throw new IllegalArgumentException("MediaItemDTO details are required");
-        }
-        if (dto.getId() != null) {
-            Optional<MediaItem> existing = mediaItemRepository.findById(dto.getId());
-            if (existing.isPresent()) {
-                return existing.get();
-            }
-        }
-        if (dto.getExternalId() != null && dto.getMediaType() != null) {
-            List<MediaType> candidates = getCandidateMediaTypes(dto.getMediaType());
-            Optional<MediaItem> existing = mediaItemRepository.findFirstByExternalIdAndMediaTypeIn(dto.getExternalId(), candidates);
-            if (existing.isPresent()) {
-                return existing.get();
-            }
-        }
-        try {
-            return saveDTOToEntity(dto, false);
-        } catch (DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException e) {
-            log.warn("Concurrent insert collision in getOrCreateFromDTO for externalId='{}', re-fetching", dto.getExternalId());
-            return mediaItemRepository.findByExternalIdAndMediaType(dto.getExternalId(), dto.getMediaType())
-                    .orElseThrow(() -> new IllegalStateException("Failed to retrieve media item after concurrent insert", e));
-        }
-    }
-
     public List<MediaType> getCandidateMediaTypes(MediaType requestedType) {
         if (requestedType == MediaType.SERIES) {
             return List.of(MediaType.SERIES, MediaType.ANIME);
@@ -263,8 +284,8 @@ public class MediaItemService {
         }
     }
 
-    /** providerData: the score is copied only from provider responses, never from client-sent mediaDetails */
-    private MediaItem saveDTOToEntity(MediaItemDTO dto, boolean providerData) {
+    /** Only ever called with provider responses (never client-sent details), so every field can be trusted */
+    private MediaItem saveDTOToEntity(MediaItemDTO dto) {
         MediaItem entity = MediaItem.builder()
                 .externalId(dto.getExternalId())
                 .mediaType(dto.getMediaType())
@@ -279,10 +300,8 @@ public class MediaItemService {
                 .platformsJson(dto.getPlatformsJson() != null ? dto.getPlatformsJson() : new ArrayList<>())
                 .releaseDate(dto.getReleaseDate())
                 .build();
-        if (providerData) {
-            entity.setVoteAverage(dto.getVoteAverage());
-            entity.setVoteCount(dto.getVoteCount());
-        }
+        entity.setVoteAverage(dto.getVoteAverage());
+        entity.setVoteCount(dto.getVoteCount());
 
         log.info("Persisting new MediaItem to MySQL verdikt_db: title='{}', externalId='{}', type={}",
                 entity.getTitle(), entity.getExternalId(), entity.getMediaType());

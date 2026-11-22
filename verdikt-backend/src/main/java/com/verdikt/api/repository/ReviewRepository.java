@@ -22,6 +22,10 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     boolean existsByUserIdAndMediaItemId(UUID userId, UUID mediaItemId);
 
+    /** Rows: [mediaItemId, verdict, count] for the given titles */
+    @Query("select r.mediaItem.id, r.verdict, count(r) from Review r where r.mediaItem.id in :ids group by r.mediaItem.id, r.verdict")
+    List<Object[]> countVerdictsByMedia(@Param("ids") java.util.Collection<UUID> ids);
+
     @Modifying
     @Query("delete from Review r where r.user.id = :userId")
     int deleteAllByUserId(@Param("userId") UUID userId);

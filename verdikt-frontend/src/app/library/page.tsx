@@ -140,7 +140,7 @@ export default function LibraryPage() {
     if (!removeTarget) return;
     setRemoving(true);
     try {
-      const result = await userMediaApi.setWatched(removeTarget.id, false);
+      const result = await userMediaApi.setWatched(removeTarget.id, false, { deleteReview: true });
       setHistory((h) => h?.filter((item) => item.id !== removeTarget.id) ?? h);
       setCollections((cs) =>
         cs?.map((c) =>

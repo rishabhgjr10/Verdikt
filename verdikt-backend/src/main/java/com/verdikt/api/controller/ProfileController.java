@@ -7,6 +7,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -55,6 +56,12 @@ public class ProfileController {
     @DeleteMapping("/avatar")
     public ProfileService.MeResponse removeAvatar(@AuthenticationPrincipal UserDetails user) {
         return profileService.removeAvatar(user.getUsername());
+    }
+
+    /** "Sign out of all devices": revokes every token, returns a new one for this device */
+    @PostMapping("/sessions/revoke")
+    public AuthResponse signOutEverywhere(@AuthenticationPrincipal UserDetails user) {
+        return profileService.signOutEverywhere(user.getUsername());
     }
 
     @PutMapping("/username")

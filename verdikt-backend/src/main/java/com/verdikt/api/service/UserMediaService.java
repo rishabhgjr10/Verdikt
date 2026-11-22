@@ -84,8 +84,20 @@ public class UserMediaService {
      */
     @Transactional
     public WatchedResult setWatched(String username, UUID mediaId, boolean value) {
+        return setWatched(username, mediaId, value, true);
+    }
+
+    /**
+     * Unmarking a title also deletes the user's review of it. Without confirmDeleteReview that is refused (409) before
+     * anything changes, so a retry, a double tap or an outdated client can't silently destroy a review.
+     */
+    @Transactional
+    public WatchedResult setWatched(String username, UUID mediaId, boolean value, boolean confirmDeleteReview) {
         UUID userId = requireUserId(username);
         requireMedia(mediaId);
+        if (!value && !confirmDeleteReview && reviewRepository.existsByUserIdAndMediaItemId(userId, mediaId)) {
+            throw new ConflictException("Unmarking this also deletes your review. Confirm to continue.");
+        }
         UserMediaState state = stateRepository.findByUserIdAndMediaId(userId, mediaId)
                 .orElseGet(() -> new UserMediaState(userId, mediaId));
 

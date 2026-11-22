@@ -58,6 +58,19 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/** Fired when the API rejects the stored token (expired, revoked, or the username changed on another device) */
+export const SESSION_EXPIRED_EVENT = "verdikt:session-expired";
+
+api.interceptors.response.use(undefined, (error) => {
+  // Only for requests that carried a token (a signed-out 401 is a normal "please sign in") and never for sign-in
+  // itself, where a 401 just means a wrong password
+  if (typeof window !== "undefined" && error?.response?.status === 401 && error?.config?.headers?.Authorization &&
+    !String(error.config.url ?? "").startsWith("/auth/")) {
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+  return Promise.reject(error);
+});
+
 export const authApi = {
   login: async (data: { username?: string; email?: string; password: string }): Promise<AuthResponse> => {
     const response = await api.post<AuthResponse>("/auth/login", data);
@@ -119,6 +132,8 @@ export const profileApi = {
   /** Returns a fresh session: the old token stops working once the username changes */
   changeUsername: async (username: string): Promise<AuthResponse> =>
     (await api.put<AuthResponse>("/me/username", { username })).data,
+  /** Signs out every other device: older tokens stop working; returns a fresh session for this one */
+  signOutEverywhere: async (): Promise<AuthResponse> => (await api.post<AuthResponse>("/me/sessions/revoke")).data,
   deleteAccount: async (password: string): Promise<void> => {
     await api.delete("/me", { data: { password } });
   },
@@ -204,6 +219,10 @@ export const reviewApi = {
     const response = await api.get<ReviewComment[]>(`/reviews/${reviewId}/comments`);
     return response.data;
   },
+  /** The comment's author or the review's author only */
+  deleteComment: async (reviewId: string, commentId: string): Promise<void> => {
+    await api.delete(`/reviews/${reviewId}/comments/${commentId}`);
+  },
   addComment: async (reviewId: string, text: string): Promise<ReviewComment> => {
     const response = await api.post<ReviewComment>(`/reviews/${reviewId}/comments`, { text });
     return response.data;
@@ -215,8 +234,9 @@ export const userMediaApi = {
     const response = await api.get<MediaUserState>(`/media/${mediaId}/me`);
     return response.data;
   },
-  setWatched: async (mediaId: string, value: boolean): Promise<WatchedResult> => {
-    const response = await api.put<WatchedResult>(`/media/${mediaId}/watched`, { value });
+  /** Unmarking a reviewed title deletes the review: the server refuses (409) unless deleteReview is true */
+  setWatched: async (mediaId: string, value: boolean, opts: { deleteReview?: boolean } = {}): Promise<WatchedResult> => {
+    const response = await api.put<WatchedResult>(`/media/${mediaId}/watched`, { value, deleteReview: !!opts.deleteReview });
     return response.data;
   },
   setWatchLater: async (mediaId: string, value: boolean): Promise<WatchedResult> => {

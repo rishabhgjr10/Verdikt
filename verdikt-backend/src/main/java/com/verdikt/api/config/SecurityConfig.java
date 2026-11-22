@@ -1,6 +1,7 @@
 package com.verdikt.api.config;
 
 import com.verdikt.api.security.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import jakarta.servlet.http.HttpServletResponse;
@@ -64,7 +65,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/discovery/**").permitAll()
 
                         // System / Error / Health endpoints
-                        .requestMatchers("/error", "/favicon.ico", "/", "/actuator/**", "/api/health").permitAll()
+                        .requestMatchers("/error", "/favicon.ico", "/", "/api/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/health").permitAll()
 
                         // Any other endpoint requires JWT authentication
@@ -81,27 +82,23 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * The only origins allowed to call the API from a browser: the deployed frontends and local dev. Set
+     * CORS_ALLOWED_ORIGINS (comma-separated) to change the list, e.g. to add a custom domain.
+     */
+    @Value("${CORS_ALLOWED_ORIGINS:https://verdikt-two.vercel.app,https://verdiikt.vercel.app,https://verdikt-frontend-weld.vercel.app,http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001}")
+    private List<String> allowedOrigins;
+
+    /** The single CORS policy (the duplicate in WebMvcConfig was removed) */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-
-        // Allowed Origin Patterns (Vercel, Render, Localhost, Wildcards)
-        configuration.setAllowedOriginPatterns(List.of(
-                "https://*.vercel.app",
-                "https://*.onrender.com",
-                "https://verdikt-aegh.onrender.com",
-                "https://verdikt-frontend-weld.vercel.app",
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-                "http://localhost:3001",
-                "https://verdikt-two.vercel.app",
-                "*"
-        ));
-
+        configuration.setAllowedOrigins(allowedOrigins.stream().map(String::trim).filter(o -> !o.isEmpty()).toList());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept", "*"));
-        configuration.setExposedHeaders(List.of("Authorization", "Content-Type"));
-        configuration.setAllowCredentials(true);
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept"));
+        configuration.setExposedHeaders(List.of("Retry-After"));
+        // Auth is a bearer token in a header, never a cookie, so browsers never need to send credentials
+        configuration.setAllowCredentials(false);
         configuration.setMaxAge(3600L); // Cache preflight response for 1 hour
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

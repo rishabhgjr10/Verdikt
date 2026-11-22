@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import React, { useCallback, useEffect, useState, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { NavMediaCategory } from "@/components/Navbar";
 import { MediaCard } from "@/components/MediaCard";
 import { SlidingPill } from "@/components/ui/SlidingPill";
@@ -30,7 +30,6 @@ const CURATED_BOOKS = [...CURATED_POPULAR_BOOKS, ...CURATED_WORTH_READING].filte
 
 function SearchContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   const query = searchParams.get("q") || "";
   const urlType = searchParams.get("type") as NavMediaCategory | null;
@@ -47,15 +46,17 @@ function SearchContent() {
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync activeFilter when urlType changes
-  useEffect(() => {
+  // Follow the URL's type when it changes (adjusted during render, React's pattern for state that follows a prop)
+  const [lastUrlType, setLastUrlType] = useState(urlType);
+  if (urlType !== lastUrlType) {
+    setLastUrlType(urlType);
     setActiveFilter(urlType || "ALL");
-  }, [urlType]);
+  }
 
   const getItemKey = (item: MediaItem, index: number) =>
     item.id || (item.externalId ? `${item.mediaType}-${item.externalId}` : `item-${index}`);
 
-  const fetchItems = async (cat: NavMediaCategory, pageToFetch: number): Promise<MediaItem[]> => {
+  const fetchItems = useCallback(async (cat: NavMediaCategory, pageToFetch: number): Promise<MediaItem[]> => {
     const searchTerm = query.trim();
 
     // 1. If explicit search query is provided
@@ -96,7 +97,7 @@ function SearchContent() {
     const fallbackSeed = cat === "ALL" ? "popular" : cat.toLowerCase();
     const results = await mediaApi.search(fallbackSeed, cat === "ALL" ? "ALL" : cat, pageToFetch);
     return deduplicateMedia(results);
-  };
+  }, [query]);
 
   useEffect(() => {
     async function loadResults() {
@@ -112,7 +113,7 @@ function SearchContent() {
         if (initialResults.length === 0 || (!query.trim() && (browseCategory === "BOOK" || browseCategory === "GAME"))) {
           setHasMore(false);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Search error", err);
         setError("Failed to fetch search results. Please check your connection.");
       } finally {
@@ -121,7 +122,7 @@ function SearchContent() {
     }
 
     loadResults();
-  }, [query, browseCategory]);
+  }, [query, browseCategory, fetchItems]);
 
   const handleFilterChipClick = (type: NavMediaCategory) => {
     setActiveFilter(type);
@@ -155,7 +156,7 @@ function SearchContent() {
         });
         setPage(nextPage);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to load more media items", err);
     } finally {
       setIsFetchingMore(false);

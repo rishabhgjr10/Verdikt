@@ -90,7 +90,7 @@ export default function ExternalMediaPage({
           <AlertCircle className="w-7 h-7" />
         </div>
         <h1 className="text-xl font-semibold text-white tracking-tight mb-2">
-          Couldn't load this title
+          Couldn&apos;t load this title
         </h1>
         <p className="text-sm text-neutral-400 max-w-sm mb-6 leading-relaxed">
           {error.includes("502")

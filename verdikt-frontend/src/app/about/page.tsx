@@ -216,8 +216,8 @@ export default async function AboutPage() {
             Meet the Founder
           </h2>
           <figure className="mt-8 w-full max-w-xs bg-white/[0.03] border border-white/10 rounded-2xl p-4 backdrop-blur-xl shadow-2xl">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             {/* Natural 3:4 portrait, never cropped; width/height reserve the space before it loads */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/Svg/photo.jpg"
               alt="Rishabh Gurjar"

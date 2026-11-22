@@ -43,11 +43,6 @@
   "exclude": [
     "node_modules",
     "src01",
-    "src/routes",
-    "src/router.tsx",
-    "src/routeTree.gen.ts",
-    "src/server.ts",
-    "src/start.ts",
     "src/test"
   ]
 }

@@ -67,6 +67,32 @@ export function tmdbLogoUrl(logoPath: string | null | undefined): string | null 
 }
 
 /** Generate a YouTube trailer fallback URL for a given title */
+const YOUTUBE_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com", "youtu.be"]);
+
+/** The YouTube video id in a watch, short or embed link; null for anything that isn't a real YouTube URL */
+export function youtubeVideoId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+  if (!YOUTUBE_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+  const id =
+    parsed.hostname.toLowerCase() === "youtu.be"
+      ? parsed.pathname.slice(1)
+      : parsed.searchParams.get("v") ?? parsed.pathname.match(/^\/embed\/([^/]+)/)?.[1] ?? "";
+  return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+}
+
+/** A stored trailer link, rebuilt from its video id so only YouTube watch pages are ever linked */
+export function safeTrailerUrl(url: string | null | undefined): string | null {
+  const id = youtubeVideoId(url);
+  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+}
+
 export function youtubeTrailerUrl(title: string): string {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(title + " official trailer")}`;
 }

@@ -31,14 +31,6 @@ const DAILY_DRAWS = 3;
 /** "Already watched" mulligans: mark the card watched and get a replacement without spending a draw */
 const DAILY_REDRAWS = 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
-/**
- * Accounts (comma-separated usernames or emails) that may switch off the daily limits to test the feature.
- * The limits only live in localStorage, so this is a testing convenience, not a privilege to protect.
- */
-const OWNERS = (process.env.NEXT_PUBLIC_BLIND_VERDIKT_OWNERS || "")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
 /** "normal" while an owner has switched back to regular limits (to test the 0/3 states) */
 const OWNER_MODE_KEY = "verdikt_blind_owner_mode";
 
@@ -311,7 +303,9 @@ export function BlindVerdikt() {
   const current = refresh(state, now);
   // The server has no localStorage, so the badge shows the default until hydration finishes
   const remaining = isClient ? current.remaining : DAILY_DRAWS;
-  const isOwner = !!user && [user.username, user.email].some((id) => id && OWNERS.includes(id.toLowerCase()));
+  // The API decides who may test without limits (BLIND_VERDIKT_OWNERS on the server), so the list never ships here.
+  // The limits themselves still live in this browser: a testing convenience, not a privilege to protect.
+  const isOwner = !!user?.blindVerdiktOwner;
   const unlimited = isClient && isOwner && !ownerNormalMode;
   const deckLabel = DECKS.find((d) => d.type === deck)!.label;
   const categoryDraws = current.todayDraws.filter((d) => d.type === deck);
@@ -491,10 +485,11 @@ export function BlindVerdikt() {
     setMarking(true);
     setError(null);
     setNote(null);
+    let askFirst = false;
     try {
       if (user) {
         const mediaId = await resolveMediaId(card);
-        const result = await userMediaApi.setWatched(mediaId, false);
+        const result = await userMediaApi.setWatched(mediaId, false, { deleteReview: confirmed });
         setLiveWatched((prev) => ({ ...prev, [card.key]: false }));
         setLiveLater((prev) => ({ ...prev, [card.key]: result.watchLater }));
         setLiveHasReview((prev) => ({ ...prev, [card.key]: false }));
@@ -505,6 +500,12 @@ export function BlindVerdikt() {
       const base = refresh(loadState());
       update({ ...base, watchedIds: base.watchedIds.filter((k) => k !== card.key) });
     } catch (err) {
+      // A review we didn't know about: ask first, then the confirm button retries with deleteReview
+      if (axios.isAxiosError(err) && err.response?.status === 409 && !confirmed) {
+        setLiveHasReview((prev) => ({ ...prev, [card.key]: true }));
+        askFirst = true;
+        return;
+      }
       showToast("Couldn't update it", {
         tone: "error",
         detail:
@@ -514,7 +515,9 @@ export function BlindVerdikt() {
       });
     } finally {
       setMarking(false);
-      setUnwatchConfirm(null);
+      // finally runs after the return above too: keep the dialog that was just asked for
+      if (askFirst) setUnwatchConfirm(card);
+      else setUnwatchConfirm(null);
     }
   };
 

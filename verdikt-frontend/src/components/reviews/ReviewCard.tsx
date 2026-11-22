@@ -7,6 +7,7 @@ import {
   EyeOff,
   Heart,
   MessageCircle,
+  Flag,
   MoreHorizontal,
   Pencil,
   Send,
@@ -14,6 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { ReviewComment, ReviewWithRelations } from "@/types/media";
+import { SITE } from "@/lib/site";
 import { reviewApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -91,6 +93,23 @@ export function ReviewCard({
         setLikeBusy(false);
       }
     });
+
+  // shortcut: reports go to the support inbox by email; a reports table plus an admin view comes with moderation tools
+  const reportHref = (what: string, text: string) =>
+    `mailto:${SITE.supportEmail}?subject=${encodeURIComponent(`Report: ${what}`)}&body=${encodeURIComponent(
+      `Link: ${typeof window !== "undefined" ? window.location.href : ""}\n\nReported text:\n${text}\n\nWhy it breaks the rules:\n`
+    )}`;
+
+  const removeComment = async (commentId: string) => {
+    try {
+      await reviewApi.deleteComment(review.id, commentId);
+      setComments((cs) => (cs ?? []).filter((x) => x.id !== commentId));
+      setCommentCount((n) => Math.max(0, n - 1));
+      showToast("Comment removed");
+    } catch {
+      showToast("Couldn't remove the comment", { tone: "error", detail: "Please try again." });
+    }
+  };
 
   const toggleComments = async () => {
     const next = !commentsOpen;
@@ -241,6 +260,12 @@ export function ReviewCard({
                 <Download className="w-4 h-4" aria-hidden="true" />
                 Share Card
               </button>
+              {!isOwner && (
+                <a role="menuitem" href={reportHref(`review by @${review.user?.username}`, review.content)} className={MENU_ITEM}>
+                  <Flag className="w-4 h-4" aria-hidden="true" />
+                  Report
+                </a>
+              )}
               {isOwner && (
                 <>
                   <button role="menuitem" type="button" className={MENU_ITEM} onClick={menuAction(onEdit)}>
@@ -283,6 +308,18 @@ export function ReviewCard({
                       </span>
                     </p>
                     <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-line break-words">{c.text}</p>
+                    <div className="mt-1 flex gap-3 text-[11px] text-zinc-500">
+                      {user && (c.user?.id === user.id || isOwner) && (
+                        <button type="button" onClick={() => removeComment(c.id)} className="hover:text-rose-400 cursor-pointer">
+                          Remove
+                        </button>
+                      )}
+                      {c.user?.id !== user?.id && (
+                        <a href={reportHref(`comment by @${c.user?.username}`, c.text)} className="hover:text-zinc-300">
+                          Report
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </li>
               ))}

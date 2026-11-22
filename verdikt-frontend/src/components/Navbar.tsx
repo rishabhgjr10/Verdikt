@@ -12,7 +12,6 @@ import {
   Search,
   User as UserIcon,
   X,
-  LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
@@ -224,7 +223,6 @@ function NavItemBody({
 
 export function Navbar({
   selectedCategory,
-  onSelectCategory,
   initialQuery = "",
   initialType,
 }: NavbarProps) {
@@ -281,8 +279,12 @@ export function Navbar({
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [isSearchClosing, setIsSearchClosing] = useState(false);
   const [recents, setRecents] = useState<string[]>([]);
-  const [suggestions, setSuggestions] = useState<MediaItem[]>([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [rawSuggestions, setSuggestions] = useState<MediaItem[]>([]);
+  const [rawLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  // Under two characters there is nothing to suggest: derived here rather than cleared from an effect
+  const shortQuery = query.trim().length < 2;
+  const suggestions = shortQuery ? [] : rawSuggestions;
+  const isLoadingSuggestions = !shortQuery && rawLoadingSuggestions;
   const [activeIndex, setActiveIndex] = useState(-1);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -349,12 +351,14 @@ export function Navbar({
     return () => ro.disconnect();
   }, [activeNavIndex, authState, utilTrack]);
 
-  // Close panels on route change
-  useEffect(() => {
+  // Close panels on route change (adjusted during render, React's pattern for state that follows a prop)
+  const [lastPath, setLastPath] = useState(pathname);
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
     setPanel(null);
     setIsSearchVisible(false);
     setIsSearchClosing(false);
-  }, [pathname]);
+  }
 
   // Handle opening / closing search animation
   const openSearchModal = () => {
@@ -420,8 +424,6 @@ export function Navbar({
     if (panel !== "search") return;
     const trimmed = query.trim();
     if (trimmed.length < 2) {
-      setSuggestions([]);
-      setIsLoadingSuggestions(false);
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;

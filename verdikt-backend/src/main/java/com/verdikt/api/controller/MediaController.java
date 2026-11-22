@@ -3,6 +3,7 @@ package com.verdikt.api.controller;
 import com.verdikt.api.MediaType;
 import com.verdikt.api.dto.MediaItemDTO;
 import com.verdikt.api.service.MediaItemService;
+import com.verdikt.api.service.ConsensusService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -23,9 +24,11 @@ public class MediaController {
     private static final Logger log = LoggerFactory.getLogger(MediaController.class);
 
     private final MediaItemService mediaItemService;
+    private final ConsensusService consensusService;
 
-    public MediaController(MediaItemService mediaItemService) {
+    public MediaController(MediaItemService mediaItemService, ConsensusService consensusService) {
         this.mediaItemService = mediaItemService;
+        this.consensusService = consensusService;
     }
 
     @GetMapping("/search")
@@ -35,7 +38,7 @@ public class MediaController {
             @RequestParam(value = "page", required = false, defaultValue = "1") int page) {
         try {
             List<MediaItemDTO> results = mediaItemService.searchMedia(query, mediaType, page);
-            return ResponseEntity.ok(results != null ? results : Collections.emptyList());
+            return ResponseEntity.ok(results != null ? consensusService.attach(results) : Collections.emptyList());
         } catch (Exception e) {
             log.error("Unhandled exception during media search [query='{}', type='{}', page={}]: {}",
                     query, mediaType, page, e.getMessage(), e);
@@ -47,7 +50,7 @@ public class MediaController {
     public ResponseEntity<MediaItemDTO> getById(@PathVariable UUID id) {
         mediaItemService.backfillMissingDetailsAsync(id);
         MediaItemDTO mediaItem = mediaItemService.getMediaItemById(id);
-        return ResponseEntity.ok(mediaItem);
+        return ResponseEntity.ok(consensusService.attach(mediaItem));
     }
 
     @GetMapping("/external/{mediaType}/{externalId}")
@@ -56,6 +59,6 @@ public class MediaController {
             @PathVariable String externalId) {
         MediaType type = MediaType.valueOf(mediaType.toUpperCase());
         var entity = mediaItemService.getOrCreateMediaItem(externalId, type);
-        return ResponseEntity.ok(MediaItemDTO.fromEntity(entity));
+        return ResponseEntity.ok(consensusService.attach(MediaItemDTO.fromEntity(entity)));
     }
 }

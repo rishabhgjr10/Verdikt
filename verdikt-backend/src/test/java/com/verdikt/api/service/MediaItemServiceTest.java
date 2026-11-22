@@ -256,6 +256,9 @@ class MediaItemServiceTest {
         @Override public List<MediaItem> findByMediaType(MediaType mediaType) { return Collections.emptyList(); }
         @Override public List<MediaItem> findByTitleContainingIgnoreCase(String title) { return Collections.emptyList(); }
         @Override public List<MediaItem> findByMediaTypeAndTitleContainingIgnoreCase(MediaType mediaType, String title) { return Collections.emptyList(); }
+        @Override public List<MediaItem> findByTitleContainingIgnoreCase(String title, org.springframework.data.domain.Pageable page) { return Collections.emptyList(); }
+        @Override public List<MediaItem> findByMediaTypeAndTitleContainingIgnoreCase(MediaType mediaType, String title, org.springframework.data.domain.Pageable page) { return Collections.emptyList(); }
+        @Override public List<MediaItem> findByExternalIdIn(Collection<String> externalIds) { return store.values().stream().filter(m -> externalIds.contains(m.getExternalId())).toList(); }
         @Override public void flush() {}
         @Override public <S extends MediaItem> S saveAndFlush(S entity) { return save(entity); }
         @Override public <S extends MediaItem> List<S> saveAllAndFlush(Iterable<S> entities) { return Collections.emptyList(); }

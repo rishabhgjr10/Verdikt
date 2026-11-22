@@ -2,43 +2,15 @@
 
 import React from "react";
 import Link from "next/link";
-import { MediaItem, Verdict } from "@/types/media";
-import { audienceVerdict } from "@/lib/tmdb";
+import { MediaItem } from "@/types/media";
+import { cardVerdict } from "@/lib/tmdb";
 import { PosterImage } from "@/components/PosterImage";
+import { VERDICT_STYLE as VERDICT_CONFIG } from "@/components/reviews/verdicts";
 
 interface MediaCardProps {
   item: MediaItem & { href?: string };
 }
 
-const VERDICT_CONFIG: Record<
-  Verdict,
-  { label: string; color: string; textClass: string; score: number }
-> = {
-  PERFECTION: {
-    label: "Perfection",
-    color: "#a855f7",
-    textClass: "text-[#a855f7]",
-    score: 4,
-  },
-  GO_FOR_IT: {
-    label: "Go For It",
-    color: "#10b981",
-    textClass: "text-[#10b981]",
-    score: 3,
-  },
-  TIMEPASS: {
-    label: "Timepass",
-    color: "#f59e0b",
-    textClass: "text-[#f59e0b]",
-    score: 2,
-  },
-  SKIP_IT: {
-    label: "Skip",
-    color: "#ef4444",
-    textClass: "text-[#ef4444]",
-    score: 1,
-  },
-};
 
 export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
   const isUuid =
@@ -54,7 +26,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item }) => {
     ? `/media/${item.id}`
     : `/media/external/${item.mediaType}/${encodeURIComponent(extId || "")}`;
 
-  const verdict = audienceVerdict(item);
+  const verdict = cardVerdict(item);
   const cfg = verdict ? VERDICT_CONFIG[verdict] : null;
 
   return (

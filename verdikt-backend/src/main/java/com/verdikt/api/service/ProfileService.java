@@ -27,11 +27,13 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.Arrays;
+import org.springframework.beans.factory.annotation.Value;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 /**
  * The signed-in user's own profile: display name, bio, social links, avatar, username and account deletion.
@@ -41,7 +43,6 @@ public class ProfileService {
 
     private static final Logger log = LoggerFactory.getLogger(ProfileService.class);
 
-    private static final Pattern USERNAME = Pattern.compile("^[A-Za-z0-9._]{3,30}$");
     private static final int NAME_MAX = 50;
     private static final int BIO_MAX = 500;
     private static final int URL_MAX = 255;
@@ -80,12 +81,22 @@ public class ProfileService {
     }
 
     /** Includes the email, so it is only ever returned to the account owner */
+    /** blindVerdiktOwner: may switch off Blind Verdikt's daily limits to test it (BLIND_VERDIKT_OWNERS, server-only) */
     public record MeResponse(UUID id, String username, String email, String avatarUrl, String firstName, String lastName,
-                             String bio, String instagramUrl, String xUrl, String youtubeUrl, Instant createdAt) {
-        static MeResponse of(User u) {
-            return new MeResponse(u.getId(), u.getUsername(), u.getEmail(), u.getAvatarUrl(), u.getFirstName(),
-                    u.getLastName(), u.getBio(), u.getInstagramUrl(), u.getXUrl(), u.getYoutubeUrl(), u.getCreatedAt());
-        }
+                             String bio, String instagramUrl, String xUrl, String youtubeUrl, Instant createdAt,
+                             boolean blindVerdiktOwner) {
+    }
+
+    /** Comma-separated usernames or emails; kept on the server so the list never ships in the browser bundle */
+    @Value("${BLIND_VERDIKT_OWNERS:}")
+    private String blindVerdiktOwners;
+
+    private MeResponse me(User u) {
+        Set<String> owners = Arrays.stream(blindVerdiktOwners.split(","))
+                .map(o -> o.trim().toLowerCase(Locale.ROOT)).filter(o -> !o.isEmpty()).collect(Collectors.toSet());
+        boolean owner = owners.contains(u.getUsername().toLowerCase(Locale.ROOT)) || owners.contains(u.getEmail().toLowerCase(Locale.ROOT));
+        return new MeResponse(u.getId(), u.getUsername(), u.getEmail(), u.getAvatarUrl(), u.getFirstName(),
+                u.getLastName(), u.getBio(), u.getInstagramUrl(), u.getXUrl(), u.getYoutubeUrl(), u.getCreatedAt(), owner);
     }
 
     /** Every field is the full new value; blank clears it. avatarStyle/avatarSeed are optional (null keeps the avatar). */
@@ -95,7 +106,7 @@ public class ProfileService {
 
     @Transactional(readOnly = true)
     public MeResponse getMe(String username) {
-        return MeResponse.of(load(username));
+        return me(load(username));
     }
 
     @Transactional
@@ -116,28 +127,44 @@ public class ProfileService {
             // A generated avatar replaces an uploaded photo
             avatarRepository.deleteById(user.getId());
         }
-        return MeResponse.of(user);
+        return me(user);
     }
 
     /** The JWT subject is the username, so a rename issues a fresh token and the old one stops working */
     @Transactional
     public AuthResponse changeUsername(String username, String requested) {
         String next = requested == null ? "" : requested.trim();
-        if (!USERNAME.matcher(next).matches()) {
-            throw new BadRequestException("Use 3 to 30 characters: letters, numbers, dots and underscores only.");
-        }
+        AccountRules.username(next);
         User user = load(username);
         if (next.equals(user.getUsername())) {
             throw new BadRequestException("That's already your username.");
         }
         // Case-only changes keep the same account; any other match belongs to someone else
-        if (!next.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsername(next)) {
+        if (!next.equalsIgnoreCase(user.getUsername()) && (userRepository.existsByUsername(next) || userRepository.existsByEmail(next))) {
             throw new ConflictException("That username is already taken.");
         }
         user.setUsername(next);
         userRepository.saveAndFlush(user);
         return AuthResponse.builder()
-                .token(tokenProvider.generateToken(next))
+                .token(tokenProvider.generateToken(next, user.getTokenVersion()))
+                .id(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .avatarUrl(user.getAvatarUrl())
+                .build();
+    }
+
+    /**
+     * Signs the account out everywhere: every token issued so far stops working. Returns a fresh session for the device
+     * that asked, so it stays signed in.
+     */
+    @Transactional
+    public AuthResponse signOutEverywhere(String username) {
+        User user = load(username);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        userRepository.saveAndFlush(user);
+        return AuthResponse.builder()
+                .token(tokenProvider.generateToken(user.getUsername(), user.getTokenVersion()))
                 .id(user.getId())
                 .username(user.getUsername())
                 .email(user.getEmail())
@@ -191,7 +218,7 @@ public class ProfileService {
         }
         // Same-origin path (the frontend proxies /avatars/* here); ?v= busts caches after every new upload
         user.setAvatarUrl("/avatars/" + user.getId() + "?v=" + now.toEpochMilli());
-        return MeResponse.of(user);
+        return me(user);
     }
 
     /** Removes an uploaded photo and goes back to the default generated avatar */
@@ -200,7 +227,7 @@ public class ProfileService {
         User user = load(username);
         avatarRepository.deleteById(user.getId());
         user.setAvatarUrl(Avatars.defaultFor(user.getUsername()));
-        return MeResponse.of(user);
+        return me(user);
     }
 
     @Transactional(readOnly = true)

@@ -25,13 +25,16 @@ public interface UserMediaStateRepository extends JpaRepository<UserMediaState, 
     /** Rows: [mediaId (UUID), interestedCount (Long)] — aggregates only, never user ids. */
     @Query("select s.mediaId, count(s) from UserMediaState s "
             + "where s.watchLater = true and s.watchLaterAt >= :since "
+            + "and s.userId in (select u.id from User u where u.createdAt <= :maturedBefore) "
             + "group by s.mediaId order by count(s) desc, max(s.watchLaterAt) desc")
-    List<Object[]> countInterestSince(@Param("since") Instant since, Pageable pageable);
+    List<Object[]> countInterestSince(@Param("since") Instant since, @Param("maturedBefore") Instant maturedBefore,
+                                      Pageable pageable);
 
     @Query("select s.mediaId, count(s) from UserMediaState s "
             + "where s.watchLater = true "
+            + "and s.userId in (select u.id from User u where u.createdAt <= :maturedBefore) "
             + "group by s.mediaId order by count(s) desc, max(s.watchLaterAt) desc")
-    List<Object[]> countInterestAllTime(Pageable pageable);
+    List<Object[]> countInterestAllTime(@Param("maturedBefore") Instant maturedBefore, Pageable pageable);
 
     @Modifying
     @Query("delete from UserMediaState s where s.userId = :userId")

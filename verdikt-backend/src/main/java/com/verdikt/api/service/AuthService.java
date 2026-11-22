@@ -7,11 +7,15 @@ import com.verdikt.api.exception.BadRequestException;
 import com.verdikt.api.repository.UserRepository;
 import com.verdikt.api.security.JwtTokenProvider;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class AuthService {
@@ -20,6 +24,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider tokenProvider;
+    /** Hash of a random throwaway value, checked when the account doesn't exist so both failures take as long */
+    private final String dummyHash;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager, JwtTokenProvider tokenProvider) {
@@ -27,32 +33,31 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.tokenProvider = tokenProvider;
+        this.dummyHash = passwordEncoder.encode(java.util.UUID.randomUUID().toString());
     }
 
     @Transactional
     public AuthResponse register(AuthRequest request) {
-        if (request.getUsername() == null || request.getUsername().isBlank()) {
-            throw new BadRequestException("Username is required");
-        }
-        if (request.getEmail() == null || request.getEmail().isBlank()) {
-            throw new BadRequestException("Email is required");
-        }
-        if (userRepository.existsByUsername(request.getUsername())) {
+        String username = AccountRules.username(request.getUsername());
+        String email = AccountRules.email(request.getEmail());
+        String password = AccountRules.password(request.getPassword());
+        // Checked against both columns: older accounts may predate the no-"@" username rule
+        if (userRepository.existsByUsername(username) || userRepository.existsByEmail(username)) {
             throw new BadRequestException("Username is already taken!");
         }
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(email) || userRepository.existsByUsername(email)) {
             throw new BadRequestException("Email address already in use!");
         }
 
         User user = User.builder()
-                .username(request.getUsername().trim())
-                .email(request.getEmail().trim().toLowerCase())
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .avatarUrl(Avatars.defaultFor(request.getUsername().trim()))
+                .username(username)
+                .email(email)
+                .passwordHash(passwordEncoder.encode(password))
+                .avatarUrl(Avatars.defaultFor(username))
                 .build();
 
         User savedUser = userRepository.save(user);
-        String token = tokenProvider.generateToken(savedUser.getUsername());
+        String token = tokenProvider.generateToken(savedUser.getUsername(), savedUser.getTokenVersion());
 
         return AuthResponse.builder()
                 .token(token)
@@ -73,8 +78,18 @@ public class AuthService {
             throw new BadRequestException("Username or email is required for login");
         }
 
-        User user = userRepository.findByUsernameOrEmail(identifier, identifier)
-                .orElseThrow(() -> new BadRequestException("Invalid username/email or password"));
+        // An "@" means an email; anything else is a username. One column per lookup, never both at once.
+        String id = identifier.trim();
+        Optional<User> found = id.contains("@")
+                // Older accounts may have an "@" in the username, so a miss on email falls back to that column alone
+                ? userRepository.findByEmail(id.toLowerCase(Locale.ROOT)).or(() -> userRepository.findByUsername(id))
+                : userRepository.findByUsername(id);
+        if (found.isEmpty()) {
+            // Same status and roughly the same time as a wrong password, so login can't reveal which accounts exist
+            passwordEncoder.matches(request.getPassword() == null ? "" : request.getPassword(), dummyHash);
+            throw new BadCredentialsException("Invalid username/email or password");
+        }
+        User user = found.get();
 
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(user.getUsername(), request.getPassword())

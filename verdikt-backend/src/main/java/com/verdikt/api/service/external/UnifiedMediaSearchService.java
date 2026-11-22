@@ -10,6 +10,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 @Service
@@ -20,6 +23,19 @@ public class UnifiedMediaSearchService {
     private final TmdbService tmdbService;
     private final IgdbService igdbService;
     private final GoogleBooksService googleBooksService;
+
+    /**
+     * Provider calls are blocking network I/O, so they get their own pool instead of the JVM-wide common pool (a few
+     * threads on a small instance, shared with everything else). 20 threads = four concurrent searches fanning out to
+     * five providers; beyond that, calls queue rather than spawning unbounded threads.
+     */
+    private static final ExecutorService PROVIDER_POOL = Executors.newFixedThreadPool(20, r -> {
+        Thread t = new Thread(r, "provider-search");
+        t.setDaemon(true);
+        return t;
+    });
+    /** A provider slower than this is left out of the results rather than holding up the whole search */
+    private static final long PROVIDER_TIMEOUT_SECONDS = 12;
 
     public UnifiedMediaSearchService(TmdbService tmdbService, IgdbService igdbService, GoogleBooksService googleBooksService) {
         this.tmdbService = tmdbService;
@@ -82,11 +98,11 @@ public class UnifiedMediaSearchService {
     }
 
     private List<MediaItemDTO> searchAllInParallel(String query, int page) {
-        CompletableFuture<List<MediaItemDTO>> moviesFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> tmdbService.searchMovies(query, page), "MOVIE"));
-        CompletableFuture<List<MediaItemDTO>> seriesFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> tmdbService.searchSeries(query, page), "SERIES"));
-        CompletableFuture<List<MediaItemDTO>> animeFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> tmdbService.searchAnime(query, page), "ANIME"));
-        CompletableFuture<List<MediaItemDTO>> gamesFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> igdbService.searchGames(query, page), "GAME"));
-        CompletableFuture<List<MediaItemDTO>> booksFuture = CompletableFuture.supplyAsync(() -> safeCall(() -> googleBooksService.searchBooks(query, page), "BOOK"));
+        CompletableFuture<List<MediaItemDTO>> moviesFuture = async(() -> safeCall(() -> tmdbService.searchMovies(query, page), "MOVIE"));
+        CompletableFuture<List<MediaItemDTO>> seriesFuture = async(() -> safeCall(() -> tmdbService.searchSeries(query, page), "SERIES"));
+        CompletableFuture<List<MediaItemDTO>> animeFuture = async(() -> safeCall(() -> tmdbService.searchAnime(query, page), "ANIME"));
+        CompletableFuture<List<MediaItemDTO>> gamesFuture = async(() -> safeCall(() -> igdbService.searchGames(query, page), "GAME"));
+        CompletableFuture<List<MediaItemDTO>> booksFuture = async(() -> safeCall(() -> googleBooksService.searchBooks(query, page), "BOOK"));
 
         try {
             CompletableFuture.allOf(moviesFuture, seriesFuture, animeFuture, gamesFuture, booksFuture).join();
@@ -102,6 +118,11 @@ public class UnifiedMediaSearchService {
         addSafeResults(results, booksFuture);
 
         return results;
+    }
+
+    private static CompletableFuture<List<MediaItemDTO>> async(Supplier<List<MediaItemDTO>> call) {
+        return CompletableFuture.supplyAsync(call, PROVIDER_POOL)
+                .completeOnTimeout(Collections.emptyList(), PROVIDER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private List<MediaItemDTO> safeCall(Supplier<List<MediaItemDTO>> supplier, String serviceName) {

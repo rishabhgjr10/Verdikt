@@ -9,8 +9,12 @@ import { bucketForDate, scheduleWindow, type ScheduleTimeline } from "@/lib/sche
 const TMDB_BASE_URL = typeof window === "undefined" ? "https://api.themoviedb.org/3" : "/tmdb-api";
 /** TMDB image CDN via this site's rewrite; relative, so it works in server-rendered HTML too */
 export const TMDB_IMG = "/tmdb-img";
-const TMDB_API_KEY =
-  process.env.NEXT_PUBLIC_TMDB_API_KEY || "801a93954c3a3f63f691e72f175cf265";
+/**
+ * In the browser the key is added by the /tmdb-api rewrite on Vercel's servers (next.config.ts), so it is never
+ * shipped to clients; only server-side calls, which go to TMDB directly, carry it themselves.
+ */
+const TMDB_KEY_PARAM =
+  typeof window === "undefined" && process.env.TMDB_API_KEY ? `api_key=${process.env.TMDB_API_KEY}&` : "";
 
 export interface TmdbItem {
   id: number;
@@ -81,13 +85,22 @@ export function voteToVerdict(vote: number): Verdict {
   return "SKIP_IT";
 }
 
+/** A card's verdict: the members' consensus from the API when someone has reviewed it, else the audience rule */
+export function cardVerdict(t: Parameters<typeof audienceVerdict>[0] & { consensus?: Verdict | null }, now = new Date()): Verdict | null {
+  return t.consensus ?? audienceVerdict(t, now);
+}
+
 /** Fewer votes than this and the average is noise (a 1991 cult film with a handful of 9s reads as Perfection) */
 export const MIN_VERDICT_VOTES = 50;
 
-/** Future release date, or no date and a future year */
+/**
+ * Not out yet anywhere: the release day hasn't started even at UTC+14, the first time zone to reach it. The API
+ * gates verdicts with the same rule (ReviewService.requireReleased).
+ */
 export function isUnreleased(t: { releaseDate?: string | null; releaseYear?: number | null }, now = new Date()): boolean {
-  if (t.releaseDate) return t.releaseDate.slice(0, 10) > now.toISOString().slice(0, 10);
-  return t.releaseYear != null && t.releaseYear > now.getFullYear();
+  const earliestToday = new Date(now.getTime() + 14 * 3_600_000).toISOString().slice(0, 10);
+  if (t.releaseDate) return t.releaseDate.slice(0, 10) > earliestToday;
+  return t.releaseYear != null && t.releaseYear > Number(earliestToday.slice(0, 4));
 }
 
 /**
@@ -226,7 +239,7 @@ export function deduplicateMedia<
 }
 
 // ── In-Memory TMDB Cache & Resilient Timeout Fetcher ────────────────────────
-const tmdbMemoryCache = new Map<string, { data: any; expiry: number }>();
+const tmdbMemoryCache = new Map<string, { data: unknown; expiry: number }>();
 
 export async function fetchWithTimeout(
   url: string,
@@ -258,7 +271,8 @@ async function cachedFetchJson<T>(url: string, ttlMs = 15 * 60 * 1000): Promise<
     tmdbMemoryCache.set(url, { data, expiry: Date.now() + ttlMs });
     return data as T;
   } catch (err) {
-    console.warn(`TMDB request timed out or failed: ${url}`, err);
+    // Path only: on the server the query string carries the API key
+    console.warn(`TMDB request timed out or failed: ${url.split("?")[0]}`, err);
     return null;
   }
 }
@@ -266,7 +280,7 @@ async function cachedFetchJson<T>(url: string, ttlMs = 15 * 60 * 1000): Promise<
 /** Fetch trending movies of the day from TMDB */
 export async function fetchTrendingMovies(): Promise<TmdbItem[]> {
   const data = await cachedFetchJson<{ results?: TmdbItem[] }>(
-    `${TMDB_BASE_URL}/trending/movie/day?api_key=${TMDB_API_KEY}&language=en-US`
+    `${TMDB_BASE_URL}/trending/movie/day?${TMDB_KEY_PARAM}language=en-US`
   );
   if (!data?.results) return [];
   return data.results.map((m: TmdbItem) => ({
@@ -278,7 +292,7 @@ export async function fetchTrendingMovies(): Promise<TmdbItem[]> {
 /** Fetch trending TV shows of the day from TMDB */
 export async function fetchTrendingTv(): Promise<TmdbItem[]> {
   const data = await cachedFetchJson<{ results?: TmdbItem[] }>(
-    `${TMDB_BASE_URL}/trending/tv/day?api_key=${TMDB_API_KEY}&language=en-US`
+    `${TMDB_BASE_URL}/trending/tv/day?${TMDB_KEY_PARAM}language=en-US`
   );
   if (!data?.results) return [];
   return data.results.map((t: TmdbItem) => ({
@@ -290,7 +304,7 @@ export async function fetchTrendingTv(): Promise<TmdbItem[]> {
 /** Fetch trending mixed media of the day from TMDB */
 export async function fetchTrendingAll(): Promise<TmdbItem[]> {
   const data = await cachedFetchJson<{ results?: TmdbItem[] }>(
-    `${TMDB_BASE_URL}/trending/all/day?api_key=${TMDB_API_KEY}&language=en-US`
+    `${TMDB_BASE_URL}/trending/all/day?${TMDB_KEY_PARAM}language=en-US`
   );
   return data?.results || [];
 }
@@ -298,7 +312,7 @@ export async function fetchTrendingAll(): Promise<TmdbItem[]> {
 /** Fetch popular Anime series (TV with animation genre in Japanese) */
 export async function fetchTrendingAnime(): Promise<TmdbItem[]> {
   const data = await cachedFetchJson<{ results?: TmdbItem[] }>(
-    `${TMDB_BASE_URL}/discover/tv?api_key=${TMDB_API_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&language=en-US`
+    `${TMDB_BASE_URL}/discover/tv?${TMDB_KEY_PARAM}with_genres=16&with_original_language=ja&sort_by=popularity.desc&language=en-US`
   );
   if (!data?.results) return [];
   return data.results.map((a: TmdbItem) => ({
@@ -336,7 +350,7 @@ export async function fetchTopRatedPage(
   }[pool];
   const data = await cachedFetchJson<{ results?: TmdbItem[]; total_pages?: number }>(
     `${TMDB_BASE_URL}/discover/${filter}${region}&vote_average.gte=7&page=${page}` +
-      `&api_key=${TMDB_API_KEY}&language=en-US`
+      `&${TMDB_KEY_PARAM}language=en-US`
   );
   return { results: data?.results || [], totalPages: data?.total_pages || 0 };
 }
@@ -344,19 +358,9 @@ export async function fetchTopRatedPage(
 /**
  * Fetch detailed movie information from TMDB, including belongs_to_collection.
  */
+/** Cached like the shelves: a franchise row asks for every film in it, so repeat visits shouldn't refetch them all */
 export async function fetchTmdbMovieDetails(tmdbId: string | number): Promise<TmdbItem | null> {
-  try {
-    const res = await fetchWithTimeout(
-      `${TMDB_BASE_URL}/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=en-US`,
-      {},
-      5000
-    );
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.error(`Failed to fetch movie details for ${tmdbId}`, err);
-    return null;
-  }
+  return cachedFetchJson<TmdbItem>(`${TMDB_BASE_URL}/movie/${tmdbId}?${TMDB_KEY_PARAM}language=en-US`);
 }
 
 export interface TmdbCrewCredit {
@@ -414,7 +418,7 @@ export async function fetchTmdbHeroDetails(
   try {
     // Text-free (null) backdrops first so the slideshow has no burned-in titles
     const res = await fetchWithTimeout(
-      `${TMDB_BASE_URL}/${isTv ? "tv" : "movie"}/${tmdbId}?api_key=${TMDB_API_KEY}&language=en-US` +
+      `${TMDB_BASE_URL}/${isTv ? "tv" : "movie"}/${tmdbId}?${TMDB_KEY_PARAM}language=en-US` +
         `&append_to_response=credits,release_dates,content_ratings,images,videos&include_image_language=null,en`,
       {},
       6000
@@ -498,7 +502,7 @@ export async function fetchTmdbHeroDetails(
 export async function fetchTmdbCollection(collectionId: string | number): Promise<TmdbCollection | null> {
   try {
     const res = await fetchWithTimeout(
-      `${TMDB_BASE_URL}/collection/${collectionId}?api_key=${TMDB_API_KEY}&language=en-US`,
+      `${TMDB_BASE_URL}/collection/${collectionId}?${TMDB_KEY_PARAM}language=en-US`,
       {},
       5000
     );
@@ -520,7 +524,7 @@ export async function fetchTmdbRecommendations(
   try {
     const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
     const res = await fetchWithTimeout(
-      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/recommendations?api_key=${TMDB_API_KEY}&language=en-US`,
+      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/recommendations?${TMDB_KEY_PARAM}language=en-US`,
       {},
       5000
     );
@@ -545,7 +549,7 @@ export async function fetchTmdbTrailerUrl(type: MediaType, tmdbId: string | numb
     const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
     const res = await fetchWithTimeout(
       // Anime and Indian titles often only have Japanese or Indian-language trailers; English ones still win below
-      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/videos?api_key=${TMDB_API_KEY}&language=en-US` +
+      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/videos?${TMDB_KEY_PARAM}language=en-US` +
         `&include_video_language=en,hi,ja,ta,te,ml,kn,null`,
       {},
       4000
@@ -588,7 +592,7 @@ export async function fetchTmdbWatchProvidersIN(
   try {
     const endpoint = type === "SERIES" || type === "ANIME" ? "tv" : "movie";
     const res = await fetchWithTimeout(
-      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`,
+      `${TMDB_BASE_URL}/${endpoint}/${tmdbId}/watch/providers?${TMDB_KEY_PARAM}`,
       {},
       5000
     );
@@ -619,7 +623,7 @@ type TmdbParams = Record<string, string | number | boolean>;
 /** GET a TMDB v3 list endpoint; returns `results` (tagged with media_type) or [] on any failure. */
 async function tmdbList(path: string, params: TmdbParams, mediaType?: "movie" | "tv"): Promise<TmdbItem[]> {
   try {
-    const query = new URLSearchParams({ api_key: TMDB_API_KEY, language: "en-US" });
+    const query = new URLSearchParams(`${TMDB_KEY_PARAM}language=en-US`);
     for (const [key, value] of Object.entries(params)) query.set(key, String(value));
     const url = `${TMDB_BASE_URL}${path}?${query}`;
     const data = await cachedFetchJson<{ results?: TmdbItem[] }>(url);

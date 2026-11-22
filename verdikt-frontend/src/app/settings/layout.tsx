@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AtSign, FileText, HeartPulse, PenLine, Shield, Sparkles, Trash2 } from "lucide-react";
+import { AtSign, FileText, HeartPulse, LogOut, PenLine, Shield, Sparkles, Trash2 } from "lucide-react";
 import { useSignedInUser } from "@/components/profile/profileData";
 
 const GROUPS = [
@@ -14,6 +14,7 @@ const GROUPS = [
       { label: "Profile Health", href: "/settings/health", icon: HeartPulse },
       { label: "My Contributions", href: "/settings/contributions", icon: Sparkles },
       { label: "Change Username", href: "/settings/account/username", icon: AtSign },
+      { label: "Security", href: "/settings/security", icon: LogOut },
       { label: "Delete Account", href: "/settings/account/delete", icon: Trash2 },
     ],
   },

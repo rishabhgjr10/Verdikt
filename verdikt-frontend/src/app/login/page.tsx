@@ -40,10 +40,9 @@ export default function LoginPage() {
         password,
       });
       router.push(nextPath ?? "/");
-    } catch (err: any) {
-      console.error("Login failed", err);
-      const rawMsg = err?.response?.data?.message || err?.message || "";
-      if (err?.response?.status === 401 || /invalid|bad credentials|not found/i.test(rawMsg)) {
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 401) {
         setError("Invalid username/email or password.");
       } else {
         setError("Unable to sign in. Please verify your credentials and try again.");

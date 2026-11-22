@@ -15,6 +15,9 @@ spring:
         dialect: org.hibernate.dialect.H2Dialect
 
 verdikt:
+  # Tests create accounts and rank them immediately; production ignores accounts younger than 3 days
+  interest:
+    min-account-age: PT0S
   jwt:
     # Test-only key (64+ bytes); never used outside the in-memory test profile
     secret: test-only-jwt-signing-secret-not-for-production-use-0123456789abcdef

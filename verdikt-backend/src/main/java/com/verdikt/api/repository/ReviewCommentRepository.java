@@ -15,6 +15,10 @@ public interface ReviewCommentRepository extends JpaRepository<ReviewComment, UU
 
     long countByReviewId(UUID reviewId);
 
+    /** Rows: [reviewId, commentCount] */
+    @Query("select c.review.id, count(c) from ReviewComment c where c.review.id in :ids group by c.review.id")
+    List<Object[]> countByReviewIds(@Param("ids") java.util.Collection<UUID> ids);
+
     List<ReviewComment> findByReviewIdOrderByCreatedAtAsc(UUID reviewId);
 
     /** Account deletion: the user's own comments plus every comment on the user's reviews */

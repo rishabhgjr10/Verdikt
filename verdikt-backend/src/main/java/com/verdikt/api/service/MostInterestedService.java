@@ -13,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import org.springframework.beans.factory.annotation.Value;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -72,6 +73,10 @@ public class MostInterestedService {
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private Clock clock = Clock.systemUTC();
 
+    /** Accounts younger than this don't count, so a burst of throwaway sign-ups can't push a title onto the public list */
+    @Value("${verdikt.interest.min-account-age:P3D}")
+    private Duration minAccountAge = Duration.ofDays(3);
+
     public MostInterestedService(UserMediaStateRepository stateRepository,
                                  MediaItemRepository mediaItemRepository,
                                  TmdbService tmdbService) {
@@ -105,8 +110,8 @@ public class MostInterestedService {
     private List<MostInterestedItem> compute(Period period, int limit, Instant now) {
         PageRequest page = PageRequest.of(0, limit);
         List<Object[]> rows = period == Period.ALL
-                ? stateRepository.countInterestAllTime(page)
-                : stateRepository.countInterestSince(now.minus(period.days, ChronoUnit.DAYS), page);
+                ? stateRepository.countInterestAllTime(now.minus(minAccountAge), page)
+                : stateRepository.countInterestSince(now.minus(period.days, ChronoUnit.DAYS), now.minus(minAccountAge), page);
 
         List<UUID> ids = rows.stream().map(r -> (UUID) r[0]).toList();
         Map<UUID, MediaItem> media = mediaItemRepository.findAllById(ids).stream()

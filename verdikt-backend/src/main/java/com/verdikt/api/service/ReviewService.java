@@ -8,9 +8,12 @@ import com.verdikt.api.User;
 import com.verdikt.api.dto.CreateReviewRequest;
 import com.verdikt.api.dto.ReviewCommentDTO;
 import com.verdikt.api.dto.ReviewResponseDTO;
+import com.verdikt.api.dto.MediaItemDTO;
 import com.verdikt.api.exception.BadRequestException;
+import com.verdikt.api.exception.ConflictException;
 import com.verdikt.api.exception.ForbiddenException;
 import com.verdikt.api.exception.ResourceNotFoundException;
+import com.verdikt.api.repository.MediaItemRepository;
 import com.verdikt.api.repository.ReviewCommentRepository;
 import com.verdikt.api.repository.ReviewLikeRepository;
 import com.verdikt.api.repository.ReviewRepository;
@@ -18,7 +21,13 @@ import com.verdikt.api.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
+import java.util.Map;
+import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -36,31 +45,34 @@ public class ReviewService {
     private final MediaItemService mediaItemService;
     private final ReviewLikeRepository reviewLikeRepository;
     private final ReviewCommentRepository reviewCommentRepository;
+    private final MediaItemRepository mediaItemRepository;
+
+    /** Same limit as the composer (MAX_REVIEW_LENGTH in verdikt-frontend/src/components/reviews/verdicts.ts) */
+    public static final int MAX_REVIEW_LENGTH = 1000;
 
     public ReviewService(ReviewRepository reviewRepository, UserRepository userRepository, MediaItemService mediaItemService,
-                         ReviewLikeRepository reviewLikeRepository, ReviewCommentRepository reviewCommentRepository) {
+                         ReviewLikeRepository reviewLikeRepository, ReviewCommentRepository reviewCommentRepository,
+                         MediaItemRepository mediaItemRepository) {
         this.reviewRepository = reviewRepository;
         this.userRepository = userRepository;
         this.mediaItemService = mediaItemService;
         this.reviewLikeRepository = reviewLikeRepository;
         this.reviewCommentRepository = reviewCommentRepository;
+        this.mediaItemRepository = mediaItemRepository;
     }
 
     @Transactional
     public ReviewResponseDTO createOrUpdateReview(CreateReviewRequest request, String currentUsername) {
         User user = requireUser(currentUsername);
 
-        MediaItem mediaItem;
-        if (request.getMediaItemId() != null) {
-            mediaItem = mediaItemService.getOrCreateFromDTO(
-                    request.getMediaDetails() != null ? request.getMediaDetails() : null);
-            if (mediaItem == null || !mediaItem.getId().equals(request.getMediaItemId())) {
-                mediaItem = mediaItemService.getOrCreateFromDTO(request.getMediaDetails());
-            }
-        } else if (request.getMediaDetails() != null) {
-            mediaItem = mediaItemService.getOrCreateFromDTO(request.getMediaDetails());
-        } else {
-            throw new BadRequestException("Either mediaItemId or mediaDetails must be provided");
+        MediaItem mediaItem = resolveMediaItem(request);
+        requireReleased(mediaItem);
+        String content = request.getContent() == null ? "" : request.getContent().trim();
+        if (content.isEmpty()) {
+            throw new BadRequestException("Write a few words with your verdict.");
+        }
+        if (content.codePointCount(0, content.length()) > MAX_REVIEW_LENGTH) {
+            throw new BadRequestException("Reviews can be at most " + MAX_REVIEW_LENGTH + " characters.");
         }
 
         Optional<Review> existingReviewOpt = reviewRepository.findByUserIdAndMediaItemId(user.getId(), mediaItem.getId());
@@ -69,14 +81,14 @@ public class ReviewService {
         if (existingReviewOpt.isPresent()) {
             review = existingReviewOpt.get();
             review.setVerdict(request.getVerdict());
-            review.setContent(request.getContent());
+            review.setContent(content);
             review.setContainsSpoilers(request.isContainsSpoilers());
         } else {
             review = Review.builder()
                     .user(user)
                     .mediaItem(mediaItem)
                     .verdict(request.getVerdict())
-                    .content(request.getContent())
+                    .content(content)
                     .containsSpoilers(request.isContainsSpoilers())
                     .build();
         }
@@ -91,17 +103,28 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public List<ReviewResponseDTO> getReviewsByMediaId(UUID mediaId, String viewerUsername) {
         UUID viewerId = viewerId(viewerUsername);
-        return reviewRepository.findByMediaItemId(mediaId).stream()
-                .map(review -> enrich(ReviewResponseDTO.fromEntity(review), viewerId))
-                .collect(Collectors.toList());
+        return enrichAll(reviewRepository.findByMediaItemId(mediaId).stream().map(ReviewResponseDTO::fromEntity).toList(), viewerId);
     }
 
     @Transactional(readOnly = true)
     public List<ReviewResponseDTO> getReviewsByUserId(UUID userId, String viewerUsername) {
         UUID viewerId = viewerId(viewerUsername);
-        return reviewRepository.findByUserId(userId).stream()
-                .map(review -> enrich(ReviewResponseDTO.fromEntity(review), viewerId))
-                .collect(Collectors.toList());
+        return enrichAll(reviewRepository.findByUserId(userId).stream().map(ReviewResponseDTO::fromEntity).toList(), viewerId);
+    }
+
+    /** The comment's author or the review's author may remove a comment (abuse on your own review included) */
+    @Transactional
+    public void deleteComment(UUID reviewId, UUID commentId, String currentUsername) {
+        User user = requireUser(currentUsername);
+        ReviewComment comment = reviewCommentRepository.findById(commentId)
+                .filter(c -> c.getReview().getId().equals(reviewId))
+                .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+        boolean author = comment.getUser().getId().equals(user.getId());
+        boolean reviewOwner = comment.getReview().getUser().getId().equals(user.getId());
+        if (!author && !reviewOwner) {
+            throw new ForbiddenException("You can only remove your own comments, or comments on your review");
+        }
+        reviewCommentRepository.delete(comment);
     }
 
     /** Owner-only. Likes and comments are removed by the database cascade. */
@@ -159,6 +182,55 @@ public class ReviewService {
     }
 
     // shortcut: two count queries per review (N+1); batch them with a grouped query if review lists get long
+    /**
+     * The title being reviewed. Only its id or its provider id is taken from the request: the catalogue row is always
+     * built from the provider's own data, so a crafted request can't add fake titles, posters or trailer links.
+     */
+    private MediaItem resolveMediaItem(CreateReviewRequest request) {
+        if (request.getMediaItemId() != null) {
+            Optional<MediaItem> stored = mediaItemRepository.findById(request.getMediaItemId());
+            if (stored.isPresent()) {
+                return stored.get();
+            }
+        }
+        MediaItemDTO details = request.getMediaDetails();
+        if (details != null && details.getExternalId() != null && !details.getExternalId().isBlank()
+                && details.getMediaType() != null) {
+            return mediaItemService.getOrCreateMediaItem(details.getExternalId().trim(), details.getMediaType());
+        }
+        throw new BadRequestException("Choose a title to review.");
+    }
+
+    /** Verdicts open on release day, wherever it arrives first (UTC+14), matching the title page */
+    private static void requireReleased(MediaItem item) {
+        LocalDate today = LocalDate.now(ZoneId.of("Pacific/Kiritimati"));
+        boolean unreleased = item.getReleaseDate() != null
+                ? item.getReleaseDate().isAfter(today)
+                : item.getReleaseYear() != null && item.getReleaseYear() > today.getYear();
+        if (unreleased) {
+            throw new ConflictException("Verdicts open on release.");
+        }
+    }
+
+    /** Like counts, comment counts and "liked by me" for a whole list in three grouped queries, not three per review */
+    private List<ReviewResponseDTO> enrichAll(List<ReviewResponseDTO> dtos, UUID viewerId) {
+        List<UUID> ids = dtos.stream().map(ReviewResponseDTO::getId).toList();
+        if (ids.isEmpty()) {
+            return dtos;
+        }
+        Map<UUID, Long> likes = new HashMap<>();
+        reviewLikeRepository.countByReviewIds(ids).forEach(r -> likes.put((UUID) r[0], (Long) r[1]));
+        Map<UUID, Long> comments = new HashMap<>();
+        reviewCommentRepository.countByReviewIds(ids).forEach(r -> comments.put((UUID) r[0], (Long) r[1]));
+        Set<UUID> liked = viewerId == null ? Set.of() : new HashSet<>(reviewLikeRepository.findLikedReviewIds(viewerId, ids));
+        for (ReviewResponseDTO dto : dtos) {
+            dto.setLikeCount(likes.getOrDefault(dto.getId(), 0L));
+            dto.setCommentCount(comments.getOrDefault(dto.getId(), 0L));
+            dto.setLikedByMe(liked.contains(dto.getId()));
+        }
+        return dtos;
+    }
+
     private ReviewResponseDTO enrich(ReviewResponseDTO dto, UUID viewerId) {
         dto.setLikeCount(reviewLikeRepository.countByReviewId(dto.getId()));
         dto.setCommentCount(reviewCommentRepository.countByReviewId(dto.getId()));

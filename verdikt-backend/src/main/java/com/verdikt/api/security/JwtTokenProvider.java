@@ -74,19 +74,29 @@ public class JwtTokenProvider {
 
     public String generateToken(Authentication authentication) {
         UserDetails userPrincipal = (UserDetails) authentication.getPrincipal();
-        return generateToken(userPrincipal.getUsername());
+        int version = userPrincipal instanceof VerdiktUserDetails v ? v.getTokenVersion() : 0;
+        return generateToken(userPrincipal.getUsername(), version);
     }
 
-    public String generateToken(String username) {
+    /** Claim holding the user's token version; tokens issued before versions existed read as 0 */
+    static final String VERSION_CLAIM = "ver";
+
+    public String generateToken(String username, int tokenVersion) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
 
         return Jwts.builder()
                 .subject(username)
+                .claim(VERSION_CLAIM, tokenVersion)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
                 .compact();
+    }
+
+    public int getVersionFromJwt(String token) {
+        Object v = Jwts.parser().verifyWith(getSigningKey()).build().parseSignedClaims(token).getPayload().get(VERSION_CLAIM);
+        return v instanceof Number n ? n.intValue() : 0;
     }
 
     public String getUsernameFromJwt(String token) {

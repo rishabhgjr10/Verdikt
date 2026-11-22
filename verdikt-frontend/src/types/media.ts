@@ -19,6 +19,9 @@ export interface MediaItem {
   voteAverage?: number | null;
   voteCount?: number | null;
   releaseDate?: string | null;
+  /** Members' verdict from the API (most common, ties to the more cautious); absent until someone reviews it */
+  consensus?: Verdict | null;
+  reviewCount?: number | null;
 }
 
 export interface Review {
@@ -73,6 +76,8 @@ export interface User {
   instagramUrl?: string | null;
   xUrl?: string | null;
   youtubeUrl?: string | null;
+  /** Set by the API for accounts allowed to test Blind Verdikt without its daily limits */
+  blindVerdiktOwner?: boolean;
 }
 
 /** Full new values for Edit Profile; blank clears a field. avatarStyle/avatarSeed are optional. */
