@@ -51,6 +51,7 @@ export function ReviewCard({
   const [likeCount, setLikeCount] = useState(review.likeCount ?? 0);
   const [likeBusy, setLikeBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<ReviewComment[] | null>(null);
   const [commentCount, setCommentCount] = useState(review.commentCount ?? 0);
@@ -148,8 +149,21 @@ export function ReviewCard({
     fn?.();
   };
 
+  const handleToggleMenu = () => {
+    if (!menuOpen && menuRef.current && typeof window !== "undefined") {
+      const rect = menuRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setOpenUpward(spaceBelow < 220 && rect.top > 220);
+    }
+    setMenuOpen((o) => !o);
+  };
+
   return (
-    <article className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-2xl p-5 shadow-lg mb-4">
+    <article
+      className={`bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-2xl p-5 shadow-lg mb-4 relative transition-[z-index] ${
+        menuOpen ? "z-30" : "z-0"
+      }`}
+    >
       {/* Header */}
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -239,7 +253,7 @@ export function ReviewCard({
         <div className="relative" ref={menuRef}>
           <button
             type="button"
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={handleToggleMenu}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-label="Review options"
@@ -250,7 +264,9 @@ export function ReviewCard({
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 mt-2 w-40 bg-zinc-950/90 backdrop-blur-xl border border-white/[0.1] rounded-xl p-1.5 shadow-2xl z-50"
+              className={`absolute right-0 ${
+                openUpward ? "bottom-full mb-2" : "top-full mt-2"
+              } w-44 bg-zinc-950/95 backdrop-blur-2xl border border-white/15 rounded-xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.8)] z-50`}
             >
               <button role="menuitem" type="button" className={MENU_ITEM} onClick={menuAction(onShareStory)}>
                 <Share2 className="w-4 h-4" aria-hidden="true" />
