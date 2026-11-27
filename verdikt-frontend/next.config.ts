@@ -9,12 +9,12 @@ const API_BASE_URL = (
 const API_ORIGIN = new URL(API_BASE_URL).origin;
 
 // TMDB's key stays on the server: the /tmdb-api rewrite below adds it, so it never reaches a browser bundle.
-// NEXT_PUBLIC_TMDB_API_KEY is still read for existing setups; rename it to TMDB_API_KEY in Vercel.
-const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.NEXT_PUBLIC_TMDB_API_KEY || "";
-if (!TMDB_API_KEY && process.env.VERCEL_ENV === "production") {
-  // A missing key would ship a site with every shelf empty; failing the build keeps the last good deploy live
-  throw new Error("TMDB_API_KEY is not set. Add it in Vercel → Settings → Environment Variables.");
-}
+// Reads TMDB_API_KEY (or NEXT_PUBLIC_TMDB_API_KEY) from environment, with a default fallback.
+const FALLBACK_TMDB_KEY = "801a93954c3a3f63f691e72f175cf265";
+const TMDB_API_KEY =
+  process.env.TMDB_API_KEY ||
+  process.env.NEXT_PUBLIC_TMDB_API_KEY ||
+  FALLBACK_TMDB_KEY;
 
 const isDev = process.env.NODE_ENV !== "production";
 

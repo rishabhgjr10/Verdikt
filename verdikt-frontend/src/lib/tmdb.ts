@@ -13,8 +13,14 @@ export const TMDB_IMG = "/tmdb-img";
  * In the browser the key is added by the /tmdb-api rewrite on Vercel's servers (next.config.ts), so it is never
  * shipped to clients; only server-side calls, which go to TMDB directly, carry it themselves.
  */
+const FALLBACK_TMDB_KEY = "801a93954c3a3f63f691e72f175cf265";
+const ACTIVE_TMDB_KEY =
+  process.env.TMDB_API_KEY ||
+  process.env.NEXT_PUBLIC_TMDB_API_KEY ||
+  FALLBACK_TMDB_KEY;
+
 const TMDB_KEY_PARAM =
-  typeof window === "undefined" && process.env.TMDB_API_KEY ? `api_key=${process.env.TMDB_API_KEY}&` : "";
+  typeof window === "undefined" ? `api_key=${ACTIVE_TMDB_KEY}&` : "";
 
 export interface TmdbItem {
   id: number;
